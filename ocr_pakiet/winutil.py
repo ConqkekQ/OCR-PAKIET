@@ -59,8 +59,8 @@ def _order_child(parent: int, title_regex: str) -> tuple[int, str] | None:
     matches = [h for h in children if order_window_info(h, title_regex)]
     if not matches:
         return None
-    # klasyczny interfejs wielu dokumentów: pytamy kontener, który dokument jest aktywny
-    mdi_clients = [h for h in children if win32gui.GetClassName(h) == "MDIClient"]
+    # interfejs wielu dokumentów: pytamy kontener, który dokument jest aktywny
+    mdi_clients = [h for h in children if "MDICLIENT" in win32gui.GetClassName(h).upper()]
     for mdi in mdi_clients:
         active = win32gui.SendMessage(mdi, WM_MDIGETACTIVE, 0, 0)
         if active:
@@ -68,8 +68,23 @@ def _order_child(parent: int, title_regex: str) -> tuple[int, str] | None:
                 if h == active or win32gui.IsChild(active, h):
                     return order_window_info(h, title_regex)
             return None  # aktywny jest inny dokument (np. lista zamówień)
-    # inny rodzaj okien dokumentów – bierzemy ZS położone najwyżej
-    return order_window_info(matches[0], title_regex)
+    # bez kontenera: aktywny dokument leży na wierzchu spośród okien z tytułem na tym samym poziomie
+    for h in matches:
+        if _is_top_document(h):
+            return order_window_info(h, title_regex)
+    return None
+
+
+def _is_top_document(hwnd: int) -> bool:
+    parent = win32gui.GetParent(hwnd)
+    if not parent:
+        return True
+    sib = win32gui.GetWindow(parent, win32con.GW_CHILD)
+    while sib:
+        if win32gui.IsWindowVisible(sib) and win32gui.GetWindowText(sib):
+            return sib == hwnd
+        sib = win32gui.GetWindow(sib, win32con.GW_HWNDNEXT)
+    return False
 
 
 def active_order_window(title_regex: str) -> tuple[int, str] | None:
@@ -87,7 +102,7 @@ def describe_windows() -> str:
     lines = [f"Aktywne okno: [{win32gui.GetClassName(fg)}] {win32gui.GetWindowText(fg)!r}"]
     for h in _children(fg):
         t = win32gui.GetWindowText(h)
-        if not t:
+        if not t and "MDICLIENT" not in win32gui.GetClassName(h).upper():
             continue
         l, tp, r, b = win32gui.GetWindowRect(h)
         vis = "widoczne" if win32gui.IsWindowVisible(h) else "ukryte"
