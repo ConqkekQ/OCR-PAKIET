@@ -1,10 +1,11 @@
 name: Budowanie programu
 
-# Wersja do pobrania powstaje po wypchnięciu tagu, np. v0.2.0.
+# Nowa wersja: Releases -> "Draft a new release" -> tag np. v0.3.0 -> Publish release.
+# Po kilku minutach instalator i .exe same doczepią się do tego wydania.
 # Ręcznie: zakładka Actions -> "Budowanie programu" -> Run workflow (pliki w Artifacts).
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -32,7 +33,7 @@ jobs:
         id: ver
         shell: pwsh
         run: |
-          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
+          if ("${{ github.event_name }}" -eq "release") { $v = "${{ github.ref_name }}".TrimStart("v") }
           else { $v = "0.0.${{ github.run_number }}" }
           "version=$v" >> $env:GITHUB_OUTPUT
 
@@ -81,13 +82,15 @@ jobs:
             dist/OCR-PAKIET.exe
 
       - name: Wydanie (Release)
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
-          name: OCR-PAKIET ${{ steps.ver.outputs.version }}
+          tag_name: ${{ github.event.release.tag_name }}
           files: |
             dist/OCR-PAKIET-Setup.exe
             dist/OCR-PAKIET.exe
+          append_body: true
           body: |
+
             **Instalacja:** pobierz `OCR-PAKIET-Setup.exe`, uruchom i klikaj „Dalej”. Nie potrzeba uprawnień administratora.
             Wersja przenośna bez instalacji: `OCR-PAKIET.exe`.

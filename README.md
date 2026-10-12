@@ -55,14 +55,9 @@ Zmiany w pliku program wczytuje sam.
 
 ### Nowa wersja programu (dla opiekuna repozytorium)
 
-GitHub sam buduje instalator po wypchnięciu tagu wersji:
-
-```bash
-git tag v0.3.0
-git push origin v0.3.0
-```
-
-Po kilku minutach w Releases pojawi się `OCR-PAKIET-Setup.exe` i `OCR-PAKIET.exe`.
+GitHub sam buduje instalator: wejdź w **Releases → Draft a new release**, w polu tagu wpisz nową wersję
+(np. `v0.3.0`), kliknij **Publish release**. Po ok. 5 minutach do wydania doczepią się `OCR-PAKIET-Setup.exe`
+i `OCR-PAKIET.exe` (postęp widać w zakładce Actions).
 
 ### Uruchamianie z kodu źródłowego (dla programisty)
 
