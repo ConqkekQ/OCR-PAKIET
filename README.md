@@ -15,6 +15,8 @@ i nie wymaga żadnych licencji Comarcha.
 4. Porównuje kody z plikiem `pakiety.xlsx` i pokazuje podpowiedzi w okienku „zawsze na wierzchu”.
 
 Kliknięcie kodu w okienku kopiuje go do schowka, więc można go od razu wkleić w XL.
+Uwagi do pakietu (np. „7+1”) są wyróżnione na żółto tuż pod nazwą pakietu.
+Okienko można zminimalizować jak każde inne okno – wraca z paska zadań.
 
 ## Długie zamówienia (przewijanie)
 
@@ -54,7 +56,8 @@ a wszystkie stanowiska wczytają zmiany same w ciągu ok. 10 sekund po zapisaniu
 
 - Plik musi mieć arkusz z kolumnami jak w `pakiety_szablon.xlsx` (Pakiet, Kod towaru, Nazwa towaru, Uwagi).
 - Gdy dysk Z: jest chwilowo niedostępny, program używa ostatniej poprawnie wczytanej kopii i pokazuje ostrzeżenie.
-- Jeśli na którymś komputerze dysk ma inną literę, zmień ścieżkę w `config.json` (`plik_pakietow`) na tym stanowisku.
+- Jeśli na którymś komputerze plik jest pod inną ścieżką, kliknij w nakładce **⚙** i wskaż go przyciskiem
+  „Przeglądaj…”. „Przywróć domyślny” wraca do `Z:\PAKIETY\pakiety.xlsx`.
 
 ### Nowa wersja programu (dla opiekuna repozytorium)
 

@@ -14,13 +14,17 @@ def app_dir() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+# Domyślny wspólny plik pakietów działu (użytkownik może wskazać inny w ⚙ Ustawieniach)
+DOMYSLNY_PLIK_PAKIETOW = r"Z:\PAKIETY\pakiety.xlsx"
+
+
 @dataclass
 class Config:
     # Tytuł okna zamówienia w Comarch ERP XL (wyrażenie regularne)
     okno_tytul_regex: str = r"Zam[óo]wienie sprzeda[żz]y"
     # Wspólny plik z definicjami pakietów (dysk sieciowy). Gdy jest niedostępny,
     # program używa ostatniej kopii zapisanej lokalnie (pakiety_kopia.xlsx).
-    plik_pakietow: str = r"Z:\PAKIETY\pakiety.xlsx"
+    plik_pakietow: str = DOMYSLNY_PLIK_PAKIETOW
     # Co ile sekund odczytywać okno w trybie podglądu
     interwal_s: float = 1.5
     # Silnik OCR: "auto", "windows" lub "tesseract"

@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import queue
 import threading
 import time
 import tkinter as tk
 import traceback
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 
-from .config import Config, package_source, resource
+from .config import DOMYSLNY_PLIK_PAKIETOW, Config, package_source, resource
 from .ocr_engine import create_engine
 from .order_state import OrderState, order_key
 from .packages import PackageBook
@@ -22,6 +23,8 @@ OK = "#1a7f37"
 TODO = "#b35900"
 ACCENT = "#0b5cad"
 WARN = "#a40e26"
+NOTE_BG = "#ffe9a8"
+NOTE_FG = "#4a3200"
 
 
 class Worker(threading.Thread):
@@ -35,6 +38,7 @@ class Worker(threading.Thread):
         self.scan_request = threading.Event()
         self.reset_request = threading.Event()
         self.reload_request = threading.Event()
+        self.source_request = threading.Event()  # zmieniono ścieżkę pliku pakietów
         self.state = OrderState()
         self._last_hash = None
         self._last_win = None
@@ -71,6 +75,12 @@ class Worker(threading.Thread):
 
         while True:
             try:
+                if self.source_request.is_set():
+                    self.source_request.clear()
+                    src = package_source(self.cfg)
+                    self._last_hash = None
+                    self._announce(engine, src)
+                    self._publish(src.book)
                 force = self.reload_request.is_set()
                 self.reload_request.clear()
                 if src.refresh(force=force):
@@ -181,11 +191,7 @@ class App:
             except tk.TclError:
                 pass
         root.configure(bg=BG)
-        root.attributes("-topmost", True)
-        try:
-            root.attributes("-toolwindow", True)
-        except tk.TclError:
-            pass
+        root.attributes("-topmost", True)  # zwykłe okno: minimalizacja, pasek zadań, zamykanie
         k = max(1.0, root.winfo_fpixels("1i") / 96)  # skalowanie ekranu (125%, 150%…)
         sw = root.winfo_screenwidth()
         w, h = int(380 * k), int(560 * k)
@@ -209,8 +215,10 @@ class App:
         self.btn_pause.pack(side="left", padx=4)
         tk.Button(bar, text="Wyczyść", bg="#e4e6ea", fg=FG, command=self.worker.reset_request.set,
                   **btn).pack(side="left")
-        tk.Button(bar, text="↻ Pakiety", bg="#e4e6ea", fg=FG, command=self.worker.reload_request.set,
+        tk.Button(bar, text="⚙", bg="#e4e6ea", fg=FG, command=self.open_settings,
                   **btn).pack(side="right")
+        tk.Button(bar, text="↻ Pakiety", bg="#e4e6ea", fg=FG, command=self.worker.reload_request.set,
+                  **btn).pack(side="right", padx=4)
 
         body = tk.Frame(root, bg=BG)
         body.pack(fill="both", expand=True, padx=10, pady=(4, 4))
@@ -228,7 +236,8 @@ class App:
         t.tag_configure("todo", foreground=TODO, font=("Segoe UI", 10, "bold"))
         t.tag_configure("code", foreground=ACCENT, underline=True)
         t.tag_configure("muted", foreground=MUTED, font=("Segoe UI", 9))
-        t.tag_configure("note", foreground=MUTED, font=("Segoe UI", 9, "italic"), lmargin1=18, lmargin2=18)
+        t.tag_configure("note", background=NOTE_BG, foreground=NOTE_FG, font=("Segoe UI", 10, "bold"),
+                        lmargin1=6, lmargin2=6, rmargin=6, spacing1=3, spacing3=3)
         t.tag_bind("code", "<Enter>", lambda e: t.configure(cursor="hand2"))
         t.tag_bind("code", "<Leave>", lambda e: t.configure(cursor="arrow"))
         t.tag_bind("code", "<Button-1>", self.copy_code)
@@ -245,6 +254,59 @@ class App:
         else:
             self.worker.paused.set()
             self.btn_pause.configure(text="▶ Wznów")
+
+    def open_settings(self):
+        win = tk.Toplevel(self.root)
+        win.title("Ustawienia")
+        win.configure(bg=BG)
+        win.attributes("-topmost", True)
+        win.transient(self.root)
+        win.resizable(False, False)
+        pad = dict(padx=12, pady=4)
+        tk.Label(win, text="Plik z pakietami (Excel):", bg=BG, fg=FG, font=("Segoe UI", 9, "bold"),
+                 anchor="w").pack(fill="x", padx=12, pady=(12, 2))
+        var = tk.StringVar(value=self.cfg.plik_pakietow)
+        row = tk.Frame(win, bg=BG)
+        row.pack(fill="x", **pad)
+        entry = tk.Entry(row, textvariable=var, width=48, font=("Segoe UI", 9))
+        entry.pack(side="left", fill="x", expand=True)
+
+        def browse():
+            start = os.path.dirname(var.get()) if os.path.isdir(os.path.dirname(var.get())) else None
+            path = filedialog.askopenfilename(parent=win, title="Wybierz plik pakietów",
+                                              initialdir=start,
+                                              filetypes=[("Excel", "*.xlsx *.xlsm"), ("Wszystkie", "*.*")])
+            if path:
+                var.set(os.path.normpath(path))
+
+        tk.Button(row, text="Przeglądaj…", command=browse, font=("Segoe UI", 9)).pack(side="left", padx=(6, 0))
+        tk.Label(win, text=f"Domyślnie: {DOMYSLNY_PLIK_PAKIETOW}", bg=BG, fg=MUTED,
+                 font=("Segoe UI", 8), anchor="w").pack(fill="x", padx=12)
+
+        def save():
+            path = var.get().strip().strip('"')
+            if not path:
+                path = DOMYSLNY_PLIK_PAKIETOW
+            if not os.path.exists(path) and not messagebox.askyesno(
+                    "Ustawienia", f"Nie widzę pliku:\n{path}\n\nZapisać mimo to?", parent=win):
+                return
+            self.cfg.plik_pakietow = path
+            try:
+                self.cfg.save()
+            except OSError as e:
+                messagebox.showerror("Ustawienia", f"Nie udało się zapisać ustawień:\n{e}", parent=win)
+                return
+            self.worker.source_request.set()
+            win.destroy()
+
+        btns = tk.Frame(win, bg=BG)
+        btns.pack(fill="x", padx=12, pady=(10, 12))
+        tk.Button(btns, text="Przywróć domyślny", font=("Segoe UI", 9),
+                  command=lambda: var.set(DOMYSLNY_PLIK_PAKIETOW)).pack(side="left")
+        tk.Button(btns, text="Anuluj", font=("Segoe UI", 9), command=win.destroy).pack(side="right")
+        tk.Button(btns, text="Zapisz", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white",
+                  command=save).pack(side="right", padx=6)
+        entry.focus_set()
 
     def copy_code(self, event):
         idx = self.txt.index(f"@{event.x},{event.y}")
@@ -293,9 +355,11 @@ class App:
         for s in sugg:
             p = s.package
             if s.complete:
-                t.insert("end", f"✅ {p.name}  (komplet)\n", "pk_done")
+                t.insert("end", f"✅ {p.name}\n", "pk_done")
             else:
                 t.insert("end", f"📦 {p.name}  ({len(s.present)}/{len(p.items)})\n", "pk")
+            if p.note:
+                t.insert("end", f" ℹ  {p.note}\n", "note")
             for it in p.items:
                 nm = it.name or names.get(it.code, "")
                 if it in s.missing:
@@ -305,8 +369,6 @@ class App:
                     t.insert("end", "  ✔ jest  ", "ok")
                     t.insert("end", it.code, "ok")
                 t.insert("end", f"  {nm}\n" if nm else "\n", "muted")
-            if p.note:
-                t.insert("end", f"{p.note}\n", "note")
         t.configure(state="disabled")
         self.lbl_foot.configure(text=f"Odświeżono {time.strftime('%H:%M:%S')} · kliknij kod, aby go skopiować")
 

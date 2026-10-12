@@ -42,7 +42,7 @@ def test_image(path: str) -> int:
     if book:
         print("\nPodpowiedzi:")
         for s in book.suggest(codes):
-            stan = "KOMPLET" if s.complete else "brakuje: " + ", ".join(i.code for i in s.missing)
+            stan = "wszystkie towary są w zamówieniu" if s.complete else "brakuje: " + ", ".join(i.code for i in s.missing)
             print(f"  {s.package.name}: {stan}")
     return 0
 
