@@ -70,6 +70,20 @@ jobs:
           }
           exit 0
 
+      - name: Test odczytu prawdziwych zrzutów XL (Windows OCR)
+        shell: pwsh
+        run: |
+          function Notice($title, $text) {
+            $t = ($text -replace "%", "%25") -replace "`r?`n", "%0A"
+            Write-Host "::notice title=$title::$t"
+          }
+          foreach ($f in Get-ChildItem tests\zrzuty\*.png) {
+            Remove-Item wynik.txt -ErrorAction SilentlyContinue
+            Start-Process -FilePath dist\OCR-PAKIET.exe -ArgumentList "--obraz",$f.FullName,"--wynik","wynik.txt" -Wait
+            $out = if (Test-Path wynik.txt) { Get-Content wynik.txt -Raw -Encoding utf8 } else { "(NIE_MA_WYNIKU)" }
+            Notice "Zrzut XL: $($f.Name)" $out
+          }
+
       - name: Test okna ZS wewnątrz okna programu (jak w XL)
         shell: pwsh
         run: |

@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass, field
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image
 
 from .ocr_engine import OcrEngine, Word
 from .packages import levenshtein
@@ -92,6 +92,7 @@ class GridReader:
         self.cfg = cfg
         self.layout: GridLayout | None = None
         self.last_header_lines: list[str] = []
+        self.last_strip_lines: list[str] = []
         self._debug_dir = None
         if cfg.debug_zapis_obrazow:
             from .config import app_dir
@@ -170,10 +171,14 @@ class GridReader:
             dark_cols = (band < 128).mean(axis=0) > 0.8
             band[:, dark_cols] = 255
             gray[sel] = band.astype(np.uint8)
+        # jasne tło (pasy co drugi wiersz, linie siatki) -> czysta biel
+        gray[gray > 205] = 255
+        # pionowe linie siatki ciągnące się przez całą wysokość listy -> białe
+        lines = (gray < 230).mean(axis=0) > 0.6
+        gray[:, lines] = 255
         out = Image.fromarray(gray, "L")
-        out = ImageOps.autocontrast(out, cutoff=1)
         if scale != 1:
-            out = out.resize((int(out.width * scale), int(out.height * scale)), Image.LANCZOS)
+            out = out.resize((int(out.width * scale), int(out.height * scale)), Image.BICUBIC)
         return out
 
     # ---------- odczyt ----------
@@ -192,6 +197,7 @@ class GridReader:
         if self._debug_dir:
             prep.save(os.path.join(self._debug_dir, f"pasek_{int(time.time()*1000)}.png"))
         lines = self.engine.read(prep)
+        self.last_strip_lines = [" ".join(w.text for w in ln) for ln in lines]  # do diagnozy
 
         rows: list[Row] = []
         for ln in lines:

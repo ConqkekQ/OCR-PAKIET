@@ -47,7 +47,7 @@ def test_image(path: str) -> int:
     return 0
 
 
-def check_live_window() -> int:
+def check_live_window(save_dir: str | None = None) -> int:
     import time
 
     from . import winutil
@@ -68,10 +68,25 @@ def check_live_window() -> int:
     img = winutil.capture(hwnd)
     print(f"Zrzut: {img.size if img else None}")
     engine = create_engine(cfg.ocr_silnik, cfg.ocr_jezyki, cfg.tesseract_sciezka)
-    res = GridReader(engine, cfg).read(img)
+    print(f"Silnik OCR: {engine.name}")
+    reader = GridReader(engine, cfg)
+    res = reader.read(img)
+    if save_dir and img is not None:
+        import os
+
+        img.save(os.path.join(save_dir, "ocr_zrzut_okna.png"))
+        if res.layout:
+            lay = res.layout
+            reader._prepare(img.crop((lay.x0, lay.y0, lay.x1, lay.y1)), cfg.skala).save(
+                os.path.join(save_dir, "ocr_pasek.png"))
+        print(f"Zapisano obrazy diagnostyczne w: {save_dir}")
     if res.error:
         print("BŁĄD:", res.error)
+        for ln in reader.last_header_lines[:40]:
+            print("  ", ln)
         return 1
+    print(f"Obszar listy: {res.layout}")
+    print(f"Odczytane linie OCR: {reader.last_strip_lines}")
     for r in res.rows:
         print(f"  Lp {r.lp:>4}  {r.code}")
     return 0
@@ -106,7 +121,10 @@ def main() -> int:
                     help="po 5 s znajdź aktywne ZS na ekranie, odczytaj je i zapisz wynik")
     args = ap.parse_args()
     if args.sprawdz_okno:
-        return _redirect(args.wynik, check_live_window)
+        import os
+
+        folder = os.path.dirname(os.path.abspath(args.wynik)) if args.wynik else None
+        return _redirect(args.wynik, lambda: check_live_window(folder))
     if args.okna:
         import time
 
