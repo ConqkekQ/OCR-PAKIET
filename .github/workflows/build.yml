@@ -70,6 +70,33 @@ jobs:
           }
           exit 0
 
+      - name: Test okna ZS wewnątrz okna programu (jak w XL)
+        shell: pwsh
+        run: |
+          function Notice($title, $text) {
+            $t = ($text -replace "%", "%25") -replace "`r?`n", "%0A"
+            Write-Host "::notice title=$title::$t"
+          }
+          $wyniki = @{}
+          foreach ($przypadek in @("zs", "lista")) {
+            $a = @("-NoProfile", "-File", "tests/okno_mdi.ps1", "-Obraz", "syn.png")
+            if ($przypadek -eq "lista") { $a += "-AktywnaLista" }
+            $form = Start-Process pwsh -ArgumentList $a -PassThru
+            Start-Sleep -Seconds 4
+            Remove-Item live.txt -ErrorAction SilentlyContinue
+            Start-Process -FilePath dist\OCR-PAKIET.exe -ArgumentList "--sprawdz-okno","--wynik","live.txt" -Wait
+            Stop-Process -Id $form.Id -Force -ErrorAction SilentlyContinue
+            $out = if (Test-Path live.txt) { Get-Content live.txt -Raw -Encoding utf8 } else { "(NIE_MA_WYNIKU)" }
+            Notice "Okno w oknie: aktywny dokument = $przypadek" $out
+            $wyniki[$przypadek] = $out
+          }
+          if (($wyniki.Values -join "") -match "Traceback|NIE_MA_WYNIKU") {
+            Write-Host "::error::Test okna zakończył się błędem"; exit 1
+          }
+          if ($wyniki["zs"] -notmatch "Znalezione ZS") { Write-Host "::warning::Nie znaleziono ZS wewnątrz okna programu" }
+          if ($wyniki["lista"] -notmatch "NIE ZNALEZIONO") { Write-Host "::warning::ZS uznane za aktywne, choć aktywna była lista" }
+          exit 0
+
       - name: Instalator (Inno Setup)
         shell: pwsh
         run: |

@@ -47,6 +47,50 @@ def test_image(path: str) -> int:
     return 0
 
 
+def check_live_window() -> int:
+    import time
+
+    from . import winutil
+    from .config import Config
+    from .ocr_engine import create_engine
+    from .reader import GridReader
+
+    winutil.set_dpi_aware()
+    time.sleep(5)
+    cfg = Config.load()
+    print(winutil.describe_windows())
+    win = winutil.active_order_window(cfg.okno_tytul_regex)
+    if not win:
+        print("\nNIE ZNALEZIONO aktywnego okna ZS")
+        return 1
+    hwnd, title = win
+    print(f"\nZnalezione ZS: {title!r}")
+    img = winutil.capture(hwnd)
+    print(f"Zrzut: {img.size if img else None}")
+    engine = create_engine(cfg.ocr_silnik, cfg.ocr_jezyki, cfg.tesseract_sciezka)
+    res = GridReader(engine, cfg).read(img)
+    if res.error:
+        print("BŁĄD:", res.error)
+        return 1
+    for r in res.rows:
+        print(f"  Lp {r.lp:>4}  {r.code}")
+    return 0
+
+
+def _redirect(path, fn) -> int:
+    if not path:
+        return fn()
+    with open(path, "w", encoding="utf-8") as f:
+        sys.stdout = sys.stderr = f
+        try:
+            return fn()
+        except Exception:  # noqa: BLE001
+            import traceback
+
+            traceback.print_exc()
+            return 2
+
+
 def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -56,7 +100,27 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="ocr_pakiet")
     ap.add_argument("--obraz", help="test odczytu na pliku ze zrzutem okna ZS")
     ap.add_argument("--wynik", help="zapisz wynik testu do pliku (dla wersji .exe bez konsoli)")
+    ap.add_argument("--okna", action="store_true",
+                    help="po 5 s zapisz opis aktywnego okna (kliknij w tym czasie w XL)")
+    ap.add_argument("--sprawdz-okno", action="store_true",
+                    help="po 5 s znajdź aktywne ZS na ekranie, odczytaj je i zapisz wynik")
     args = ap.parse_args()
+    if args.sprawdz_okno:
+        return _redirect(args.wynik, check_live_window)
+    if args.okna:
+        import time
+
+        from . import winutil
+
+        winutil.set_dpi_aware()
+        time.sleep(5)
+        text = winutil.describe_windows()
+        if args.wynik:
+            with open(args.wynik, "w", encoding="utf-8") as f:
+                f.write(text)
+        else:
+            print(text)
+        return 0
     if args.obraz:
         if args.wynik:
             with open(args.wynik, "w", encoding="utf-8") as f:

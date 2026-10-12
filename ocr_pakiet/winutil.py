@@ -26,9 +26,16 @@ def set_dpi_aware() -> None:
             pass
 
 
+GA_ROOT = 2
+WM_MDIGETACTIVE = 0x0229
+
+
 def order_window_info(hwnd: int | None, title_regex: str) -> tuple[int, str] | None:
-    """(hwnd, tytuł), jeśli okno nadal istnieje, nie jest zminimalizowane i jest oknem ZS."""
+    """(hwnd, tytuł), jeśli okno nadal istnieje, jest widoczne, nie jest zminimalizowane
+    i ma tytuł zamówienia sprzedaży."""
     if not hwnd or not win32gui.IsWindow(hwnd) or win32gui.IsIconic(hwnd):
+        return None
+    if not win32gui.IsWindowVisible(hwnd):
         return None
     title = win32gui.GetWindowText(hwnd) or ""
     if not re.search(title_regex, title, re.IGNORECASE):
@@ -36,9 +43,56 @@ def order_window_info(hwnd: int | None, title_regex: str) -> tuple[int, str] | N
     return hwnd, title
 
 
+def _children(parent: int) -> list[int]:
+    out: list[int] = []
+    try:
+        win32gui.EnumChildWindows(parent, lambda h, _: out.append(h) or True, None)
+    except Exception:  # okno bez dzieci
+        pass
+    return out  # kolejność: od okna na wierzchu
+
+
+def _order_child(parent: int, title_regex: str) -> tuple[int, str] | None:
+    """ZS otwarte WEWNĄTRZ głównego okna Comarch ERP XL (okno dokumentu w oknie programu).
+    Zwraca je tylko wtedy, gdy to ono jest aktywnym dokumentem."""
+    children = _children(parent)
+    matches = [h for h in children if order_window_info(h, title_regex)]
+    if not matches:
+        return None
+    # klasyczny interfejs wielu dokumentów: pytamy kontener, który dokument jest aktywny
+    mdi_clients = [h for h in children if win32gui.GetClassName(h) == "MDIClient"]
+    for mdi in mdi_clients:
+        active = win32gui.SendMessage(mdi, WM_MDIGETACTIVE, 0, 0)
+        if active:
+            for h in matches:
+                if h == active or win32gui.IsChild(active, h):
+                    return order_window_info(h, title_regex)
+            return None  # aktywny jest inny dokument (np. lista zamówień)
+    # inny rodzaj okien dokumentów – bierzemy ZS położone najwyżej
+    return order_window_info(matches[0], title_regex)
+
+
 def active_order_window(title_regex: str) -> tuple[int, str] | None:
-    """Okno ZS tylko wtedy, gdy jest aktywne (na pierwszym planie)."""
-    return order_window_info(win32gui.GetForegroundWindow(), title_regex)
+    """Okno ZS tylko wtedy, gdy obsługa w nim pracuje: samo jest aktywne albo jest
+    aktywnym dokumentem w aktywnym oknie Comarch ERP XL."""
+    fg = win32gui.GetForegroundWindow()
+    if not fg:
+        return None
+    return order_window_info(fg, title_regex) or _order_child(fg, title_regex)
+
+
+def describe_windows() -> str:
+    """Opis aktywnego okna i jego okien wewnętrznych (diagnoza: OCR-PAKIET.exe --okna)."""
+    fg = win32gui.GetForegroundWindow()
+    lines = [f"Aktywne okno: [{win32gui.GetClassName(fg)}] {win32gui.GetWindowText(fg)!r}"]
+    for h in _children(fg):
+        t = win32gui.GetWindowText(h)
+        if not t:
+            continue
+        l, tp, r, b = win32gui.GetWindowRect(h)
+        vis = "widoczne" if win32gui.IsWindowVisible(h) else "ukryte"
+        lines.append(f"  [{win32gui.GetClassName(h)}] {t!r}  {r - l}x{b - tp} {vis}")
+    return "\n".join(lines)
 
 
 def window_rect(hwnd: int) -> tuple[int, int, int, int]:
@@ -89,10 +143,11 @@ def capture(hwnd: int) -> Image.Image | None:
 
 
 def bring_to_front(hwnd: int) -> None:
+    root = win32gui.GetAncestor(hwnd, GA_ROOT) or hwnd  # ZS wewnątrz XL -> okno programu
     try:
         # sztuczka z ALT pozwala oddać fokus innemu oknu
         win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
-        win32gui.SetForegroundWindow(hwnd)
+        win32gui.SetForegroundWindow(root)
     except Exception:
         pass
     finally:
