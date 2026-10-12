@@ -9,7 +9,7 @@ i nie wymaga żadnych licencji Comarcha.
 
 ## Jak to działa
 
-1. Co ~1,5 s program robi zrzut okna *Zamówienie sprzedaży* (działa także, gdy okno jest częściowo zasłonięte).
+1. Co ~1,5 s program sprawdza, czy aktywne jest okno *Zamówienie sprzedaży* (po tytule okna). Zrzut robi tylko wtedy, gdy obsługa pracuje w tym oknie. Gdy ZS jest w tle, zminimalizowane albo zamknięte, program nic nie robi. Zrzut trzymany jest wyłącznie w pamięci i nie zapisuje się na dysku.
 2. Znajduje nagłówek listy pozycji (kolumny **Lp.**, **Towar**, **Nazwa**) i wycina pasek z numerami i kodami.
 3. Rozpoznaje tekst wbudowanym w Windows silnikiem OCR. Kody są poprawiane o typowe pomyłki (O/0, I/1, S/5), ale **nie** o zamienione cyfry, bo `L002594` i `L002591` to różne towary.
 4. Porównuje kody z plikiem `pakiety.xlsx` i pokazuje podpowiedzi w okienku „zawsze na wierzchu”.

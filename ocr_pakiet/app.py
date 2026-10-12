@@ -37,6 +37,14 @@ class Worker(threading.Thread):
         self.reload_request = threading.Event()
         self.state = OrderState()
         self._last_hash = None
+        self._last_win = None
+        self._status = ""
+
+    def _set_status(self, status: str) -> bool:
+        """Zapamiętuje stan; zwraca True, gdy się zmienił (komunikat wysyłamy raz)."""
+        changed = status != self._status
+        self._status = status
+        return changed
 
     def run(self):
         import ctypes
@@ -68,18 +76,32 @@ class Worker(threading.Thread):
                     self.state.reset(self.state.key)
                     self._last_hash = None
 
-                win = winutil.find_order_window(self.cfg.okno_tytul_regex)
-                if win is None:
-                    self.out.put(("idle", "Otwórz zamówienie sprzedaży (ZS) w Comarch ERP XL"))
-                    time.sleep(self.cfg.interwal_s)
-                    continue
-                hwnd, title = win
+                rx = self.cfg.okno_tytul_regex
+                # zrzuty robimy tylko, gdy okno ZS jest aktywne (obsługa w nim pracuje)
+                win = winutil.active_order_window(rx)
+                if win:
+                    self._last_win = win[0]
 
                 if self.scan_request.is_set():
                     self.scan_request.clear()
-                    self._full_scan(hwnd, title, reader, book)
-                elif not self.paused.is_set():
-                    self._quick_read(hwnd, title, reader, book)
+                    # kliknięcie przycisku aktywuje nakładkę, więc skanujemy ostatnie aktywne ZS
+                    target = win or winutil.order_window_info(self._last_win, rx)
+                    if target:
+                        self._full_scan(target[0], target[1], reader, book)
+                    else:
+                        self.out.put(("warn", "Najpierw kliknij w okno zamówienia (ZS) w XL"))
+                elif win:
+                    if self._set_status("active"):
+                        self.out.put(("hint", "Odczyt aktywny"))
+                    if not self.paused.is_set():
+                        self._quick_read(win[0], win[1], reader, book)
+                elif winutil.order_window_info(self._last_win, rx):
+                    if self._set_status("inactive"):
+                        self.out.put(("hint", "Okno ZS nieaktywne – odczyt wstrzymany (kliknij w zamówienie)"))
+                else:
+                    self._last_win = None
+                    if self._set_status("none"):
+                        self.out.put(("idle", "Otwórz zamówienie sprzedaży (ZS) w Comarch ERP XL"))
             except Exception as e:  # noqa: BLE001
                 self.out.put(("error", f"{e}\n{traceback.format_exc(limit=2)}"))
             time.sleep(self.cfg.interwal_s)
@@ -279,6 +301,8 @@ class App:
                 elif kind == "idle":
                     self.lbl_order.configure(text="—")
                     self.lbl_info.configure(text=data, fg=MUTED)
+                elif kind == "hint":
+                    self.lbl_foot.configure(text=data)
                 elif kind in ("warn", "busy"):
                     self.lbl_info.configure(text=data, fg=TODO)
                 elif kind == "engine":

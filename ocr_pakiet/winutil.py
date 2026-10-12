@@ -26,23 +26,19 @@ def set_dpi_aware() -> None:
             pass
 
 
-def find_order_window(title_regex: str) -> tuple[int, str] | None:
-    """Okno zamówienia: aktywne, jeśli pasuje; inaczej najwyżej położone pasujące."""
-    rx = re.compile(title_regex, re.IGNORECASE)
-    fg = win32gui.GetForegroundWindow()
-    if fg and rx.search(win32gui.GetWindowText(fg) or "") and not win32gui.IsIconic(fg):
-        return fg, win32gui.GetWindowText(fg)
-    found: list[tuple[int, str]] = []
+def order_window_info(hwnd: int | None, title_regex: str) -> tuple[int, str] | None:
+    """(hwnd, tytuł), jeśli okno nadal istnieje, nie jest zminimalizowane i jest oknem ZS."""
+    if not hwnd or not win32gui.IsWindow(hwnd) or win32gui.IsIconic(hwnd):
+        return None
+    title = win32gui.GetWindowText(hwnd) or ""
+    if not re.search(title_regex, title, re.IGNORECASE):
+        return None
+    return hwnd, title
 
-    def cb(hwnd, _):
-        if win32gui.IsWindowVisible(hwnd) and not win32gui.IsIconic(hwnd):
-            t = win32gui.GetWindowText(hwnd) or ""
-            if rx.search(t):
-                found.append((hwnd, t))
-        return True
 
-    win32gui.EnumWindows(cb, None)  # kolejność = od okna na wierzchu
-    return found[0] if found else None
+def active_order_window(title_regex: str) -> tuple[int, str] | None:
+    """Okno ZS tylko wtedy, gdy jest aktywne (na pierwszym planie)."""
+    return order_window_info(win32gui.GetForegroundWindow(), title_regex)
 
 
 def window_rect(hwnd: int) -> tuple[int, int, int, int]:
