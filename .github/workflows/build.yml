@@ -54,12 +54,15 @@ jobs:
             Write-Host "::notice title=$title::$t"
           }
           python tests/syntetyczny_zs.py syn.png | Out-Null
+          # w teście używamy szablonu pakietów zamiast dysku Z:
+          '{"plik_pakietow": "pakiety.xlsx"}' | Set-Content config.json -Encoding utf8
+          Copy-Item config.json dist\config.json
           $src = (python -m ocr_pakiet --obraz syn.png 2>&1 | Out-String)
           Notice "Test z kodu (exit $LASTEXITCODE)" $src
           Start-Process -FilePath dist\OCR-PAKIET.exe -ArgumentList "--obraz","syn.png","--wynik","wynik.txt" -Wait
-          $out = if (Test-Path wynik.txt) { Get-Content wynik.txt -Raw -Encoding utf8 } else { "(brak pliku wynik.txt)" }
+          $out = if (Test-Path wynik.txt) { Get-Content wynik.txt -Raw -Encoding utf8 } else { "(NIE_MA_WYNIKU)" }
           Notice "Test pliku .exe" $out
-          if ($out -match "Traceback|No module named|ModuleNotFoundError|brak pliku") {
+          if ($out -match "Traceback|No module named|ModuleNotFoundError|NIE_MA_WYNIKU") {
             Write-Host "::error::Plik .exe nie uruchomił się poprawnie"; exit 1
           }
           if ($out -notmatch "MREKLATS100") {

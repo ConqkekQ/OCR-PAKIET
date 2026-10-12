@@ -42,16 +42,19 @@ zablokuje antywirus, poproś IT o dodanie go do wyjątków.
 
 Aktualizacja: pobierz nowszy `OCR-PAKIET-Setup.exe` i zainstaluj na starą wersję. Plik pakietów i ustawienia zostają.
 
-Program instaluje się w `%LOCALAPPDATA%\Programs\OCR-PAKIET`. Tam leżą `pakiety.xlsx` i `config.json`;
-do pliku pakietów jest też skrót w menu Start („Plik pakietów (Excel)”).
+Program instaluje się w `%LOCALAPPDATA%\Programs\OCR-PAKIET` (tam jest też `config.json` z ustawieniami).
 
 **Wersja przenośna:** `OCR-PAKIET.exe` z tej samej strony działa bez instalacji, np. z pendrive’a lub dysku sieciowego.
 
 ### Wspólny plik pakietów dla całego działu
 
-Żeby nie uzupełniać pakietów na każdym komputerze osobno, połóż `pakiety.xlsx` na dysku sieciowym i w `config.json`
-każdego stanowiska wpisz pełną ścieżkę, np. `"plik_pakietow": "\\\\serwer\\sprzedaz\\pakiety.xlsx"`.
-Zmiany w pliku program wczytuje sam.
+Program czyta pakiety ze wspólnego pliku **`Z:\PAKIETY\pakiety.xlsx`**. Wystarczy go edytować w jednym miejscu,
+a wszystkie stanowiska wczytają zmiany same w ciągu ok. 10 sekund po zapisaniu. Skrót do pliku jest w menu Start
+(„Plik pakietów (Excel)”).
+
+- Plik musi mieć arkusz z kolumnami jak w `pakiety_szablon.xlsx` (Pakiet, Kod towaru, Nazwa towaru, Uwagi).
+- Gdy dysk Z: jest chwilowo niedostępny, program używa ostatniej poprawnie wczytanej kopii i pokazuje ostrzeżenie.
+- Jeśli na którymś komputerze dysk ma inną literę, zmień ścieżkę w `config.json` (`plik_pakietow`) na tym stanowisku.
 
 ### Nowa wersja programu (dla opiekuna repozytorium)
 
@@ -87,7 +90,7 @@ Arkusz **Pakiety**: jeden wiersz = jeden towar w pakiecie.
 Arkusz **Towary** (opcjonalny, zalecany): pełna lista kodów towarów z XL, np. wklejona z eksportu kartoteki.
 Dzięki niej program pewniej odróżnia błąd odczytu od towaru spoza pakietów.
 
-Po zapisaniu pliku program sam wczyta zmiany (lub kliknij **↻ Pakiety**). Plik może leżeć na dysku sieciowym (patrz wyżej).
+Po zapisaniu pliku program sam wczyta zmiany (lub kliknij **↻ Pakiety**). Domyślnie jest to wspólny plik na dysku Z: (patrz wyżej).
 
 ## Wymagania wobec okna XL
 
@@ -101,7 +104,7 @@ Po zapisaniu pliku program sam wczyta zmiany (lub kliknij **↻ Pakiety**). Plik
 | Klucz | Znaczenie |
 |---|---|
 | `okno_tytul_regex` | Tytuł okna zamówienia (wyrażenie regularne) |
-| `plik_pakietow` | Ścieżka do pliku pakietów |
+| `plik_pakietow` | Ścieżka do pliku pakietów (domyślnie `Z:\PAKIETY\pakiety.xlsx`) |
 | `interwal_s` | Co ile sekund odczytywać ekran |
 | `ocr_silnik` | `auto`, `windows` lub `tesseract` |
 | `skala` | Powiększenie obrazu przed OCR (więcej = dokładniej, wolniej) |

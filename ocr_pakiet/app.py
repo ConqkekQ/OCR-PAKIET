@@ -9,7 +9,7 @@ import tkinter as tk
 import traceback
 from tkinter import messagebox
 
-from .config import Config, ensure_packages_file, resource
+from .config import Config, package_source, resource
 from .ocr_engine import create_engine
 from .order_state import OrderState, order_key
 from .packages import PackageBook
@@ -40,6 +40,11 @@ class Worker(threading.Thread):
         self._last_win = None
         self._status = ""
 
+    def _announce(self, engine, src):
+        self.out.put(("engine", f"{engine.name} · pakietów: {len(src.book.packages)}"))
+        problem = src.status if (not src.ok or src.status.startswith("⚠")) else ""
+        self.out.put(("pkg", problem))
+
     def _set_status(self, status: str) -> bool:
         """Zapamiętuje stan; zwraca True, gdy się zmienił (komunikat wysyłamy raz)."""
         changed = status != self._status
@@ -58,19 +63,22 @@ class Worker(threading.Thread):
         try:
             engine = create_engine(self.cfg.ocr_silnik, self.cfg.ocr_jezyki, self.cfg.tesseract_sciezka)
             reader = GridReader(engine, self.cfg)
-            book = PackageBook(ensure_packages_file(self.cfg))
+            src = package_source(self.cfg)
         except Exception as e:  # noqa: BLE001
             self.out.put(("fatal", str(e)))
             return
-        self.out.put(("engine", f"{engine.name} · pakietów: {len(book.packages)}"))
+        self._announce(engine, src)
 
         while True:
             try:
-                if self.reload_request.is_set() or book.changed_on_disk():
-                    self.reload_request.clear()
-                    book.load()
+                force = self.reload_request.is_set()
+                self.reload_request.clear()
+                if src.refresh(force=force):
                     self._last_hash = None
-                    self.out.put(("engine", f"{engine.name} · pakietów: {len(book.packages)}"))
+                    self._announce(engine, src)
+                    if self.state.rows:
+                        self._publish(src.book)
+                book = src.book
                 if self.reset_request.is_set():
                     self.reset_request.clear()
                     self.state.reset(self.state.key)
@@ -162,6 +170,7 @@ class App:
         self.cfg = Config.load()
         self.q: queue.Queue = queue.Queue()
         self.worker = Worker(self.cfg, self.q)
+        self.pkg_warn = ""
 
         root = self.root = tk.Tk()
         root.title("Pakiety – podpowiedzi")
@@ -269,6 +278,9 @@ class App:
         else:
             info += " ✓ cała lista"
             self.lbl_info.configure(fg=MUTED)
+        if self.pkg_warn:
+            info += f"\n{self.pkg_warn}"
+            self.lbl_info.configure(fg=WARN)
         self.lbl_info.configure(text=info)
 
         t = self.txt
@@ -307,6 +319,10 @@ class App:
                 elif kind == "idle":
                     self.lbl_order.configure(text="—")
                     self.lbl_info.configure(text=data, fg=MUTED)
+                elif kind == "pkg":
+                    self.pkg_warn = data
+                    if data:
+                        self.lbl_info.configure(text=data, fg=WARN)
                 elif kind == "hint":
                     self.lbl_foot.configure(text=data)
                 elif kind in ("warn", "busy"):

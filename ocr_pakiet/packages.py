@@ -57,15 +57,16 @@ def _find_cols(header: list, wanted: dict[str, tuple]) -> dict[str, int]:
 class PackageBook:
     """Pakiety z arkusza "Pakiety" + opcjonalna lista wszystkich towarów z arkusza "Towary"."""
 
-    def __init__(self, path: str):
-        self.path = path
+    def __init__(self, path: str | None = None):
+        self.path = path or ""
         self.mtime = 0.0
         self.packages: list[Package] = []
         self.by_code: dict[str, list[Package]] = {}
         self.names: dict[str, str] = {}
         self.universe: set[str] = set()
         self.matcher = CodeMatcher(set(), set())
-        self.load()
+        if path:
+            self.load()
 
     def changed_on_disk(self) -> bool:
         try:
@@ -88,6 +89,7 @@ class PackageBook:
             raise ValueError('W pierwszym wierszu arkusza muszą być kolumny "Pakiet" i "Kod towaru"')
 
         pk: dict[str, Package] = {}
+        names: dict[str, str] = {}
         for r in rows[1:]:
             def cell(key):
                 i = cols.get(key)
@@ -102,7 +104,7 @@ class PackageBook:
             if code not in p.codes:
                 p.items.append(Item(code, name))
             if name:
-                self.names.setdefault(code, name)
+                names.setdefault(code, name)
             note = str(cell("uwagi") or "").strip()
             if note and not p.note:
                 p.note = note
@@ -118,10 +120,11 @@ class PackageBook:
                     if code:
                         universe.add(code)
                         if ni is not None and ni < len(r) and r[ni]:
-                            self.names.setdefault(code, str(r[ni]).strip())
+                            names.setdefault(code, str(r[ni]).strip())
         wb.close()
 
         self.packages = list(pk.values())
+        self.names = names
         self.by_code = {}
         for p in self.packages:
             for c in p.codes:
@@ -233,3 +236,64 @@ def _plausible_ocr_slip(a: str, b: str) -> bool:
         if longer[:i] + longer[i + 1:] == shorter:
             return longer[i] in "1.-_/" or longer[i].isalpha()
     return False
+
+
+class PackageSource:
+    """Skąd brać pakiety: wspólny plik na dysku sieciowym, a gdy dysk jest niedostępny –
+    ostatnia poprawnie wczytana kopia zapisana obok programu."""
+
+    CHECK_EVERY_S = 10.0
+
+    def __init__(self, shared: str, cache: str):
+        self.shared, self.cache = shared, cache
+        self.book = PackageBook()
+        self.status = ""
+        self.ok = False
+        self._last_check = 0.0
+
+    def _candidates(self) -> list[str]:
+        out = []
+        for p in (self.shared, self.cache):
+            if p and p not in out:
+                out.append(p)
+        return out
+
+    def refresh(self, force: bool = False) -> bool:
+        """Wczytuje plik, jeśli się zmienił lub zmieniło się źródło. Zwraca True przy zmianie."""
+        import shutil
+        import time
+
+        now = time.monotonic()
+        if not force and now - self._last_check < self.CHECK_EVERY_S:
+            return False
+        self._last_check = now
+        path = next((p for p in self._candidates() if os.path.exists(p)), None)
+        if path is None:
+            if self.ok or not self.status:
+                self.ok, self.status = False, f"Brak pliku pakietów: {self.shared}"
+                return True
+            return False
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return False
+        if not force and path == self.book.path and mtime == self.book.mtime:
+            return False
+        try:
+            book = PackageBook(path)
+        except Exception as e:  # noqa: BLE001
+            self.ok = False
+            self.status = f"Błąd w pliku {path}: {e}"
+            self.book.path, self.book.mtime = path, mtime  # nie wczytuj ponownie, póki plik się nie zmieni
+            return True
+        self.book, self.ok = book, True
+        if path == self.shared:
+            self.status = f"Pakiety: {path}"
+            if self.cache and self.cache != self.shared:
+                try:
+                    shutil.copyfile(path, self.cache)
+                except OSError:
+                    pass
+        else:
+            self.status = f"⚠ Brak dostępu do {self.shared} – używam ostatniej kopii"
+        return True

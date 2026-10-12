@@ -18,8 +18,9 @@ def app_dir() -> str:
 class Config:
     # Tytuł okna zamówienia w Comarch ERP XL (wyrażenie regularne)
     okno_tytul_regex: str = r"Zam[óo]wienie sprzeda[żz]y"
-    # Plik z definicjami pakietów
-    plik_pakietow: str = "pakiety.xlsx"
+    # Wspólny plik z definicjami pakietów (dysk sieciowy). Gdy jest niedostępny,
+    # program używa ostatniej kopii zapisanej lokalnie (pakiety_kopia.xlsx).
+    plik_pakietow: str = r"Z:\PAKIETY\pakiety.xlsx"
     # Co ile sekund odczytywać okno w trybie podglądu
     interwal_s: float = 1.5
     # Silnik OCR: "auto", "windows" lub "tesseract"
@@ -65,21 +66,6 @@ class Config:
         return name if os.path.isabs(name) else os.path.join(app_dir(), name)
 
 
-def ensure_packages_file(cfg: Config) -> str:
-    """Zwraca ścieżkę pliku pakietów; przy pierwszym uruchomieniu kopiuje szablon."""
-    import shutil
-
-    path = cfg.resolve(cfg.plik_pakietow)
-    if not os.path.exists(path):
-        # szablon leży obok programu albo jest spakowany w pliku .exe
-        for base in (app_dir(), getattr(sys, "_MEIPASS", "")):
-            tpl = os.path.join(base, "pakiety_szablon.xlsx")
-            if base and os.path.exists(tpl):
-                shutil.copyfile(tpl, path)
-                break
-    return path
-
-
 def resource(*parts: str) -> str | None:
     """Plik zasobu: obok programu albo spakowany w .exe (PyInstaller)."""
     for base in (app_dir(), getattr(sys, "_MEIPASS", "")):
@@ -87,3 +73,30 @@ def resource(*parts: str) -> str | None:
         if base and os.path.exists(p):
             return p
     return None
+
+
+def package_source(cfg: Config):
+    from .packages import PackageSource
+
+    if not os.path.isabs(cfg.plik_pakietow):
+        ensure_packages_file_local()  # tryb lokalny (np. testy) – plik obok programu z szablonu
+    src = PackageSource(
+        shared=cfg.resolve(cfg.plik_pakietow),
+        cache=os.path.join(app_dir(), "pakiety_kopia.xlsx"),
+    )
+    src.refresh(force=True)
+    return src
+
+
+def ensure_packages_file_local() -> str:
+    """Lokalny pakiety.xlsx obok programu (z szablonu) – ostatnia deska ratunku."""
+    import shutil
+
+    path = os.path.join(app_dir(), "pakiety.xlsx")
+    if not os.path.exists(path):
+        for base in (app_dir(), getattr(sys, "_MEIPASS", "")):
+            tpl = os.path.join(base, "pakiety_szablon.xlsx")
+            if base and os.path.exists(tpl):
+                shutil.copyfile(tpl, path)
+                break
+    return path

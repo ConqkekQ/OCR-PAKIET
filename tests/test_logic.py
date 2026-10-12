@@ -66,3 +66,39 @@ def test_suggest_order():
     s = PackageBook.suggest(book, {"X", "Y"})
     assert [x.package.name for x in s] == ["B", "A"]
     assert s[1].complete and [i.code for i in s[0].missing] == ["Z", "W"]
+
+
+def test_package_source_fallback(tmp_path):
+    import shutil
+
+    from ocr_pakiet.packages import PackageSource
+
+    root = __file__.rsplit("tests", 1)[0]
+    shared = tmp_path / "Z" / "pakiety.xlsx"
+    cache = tmp_path / "pakiety_kopia.xlsx"
+    shared.parent.mkdir()
+    shutil.copyfile(root + "pakiety_szablon.xlsx", shared)
+
+    src = PackageSource(str(shared), str(cache))
+    assert src.refresh(force=True) and src.ok and cache.exists()
+    assert len(src.book.packages) == 3
+
+    shared.unlink()  # dysk sieciowy niedostępny -> ostatnia kopia
+    assert src.refresh(force=True) and src.ok and src.status.startswith("⚠")
+    assert len(src.book.packages) == 3
+
+    cache.unlink()
+    src2 = PackageSource(str(shared), str(cache))
+    assert src2.refresh(force=True) and not src2.ok and "Brak pliku" in src2.status
+
+
+def test_package_source_bad_file(tmp_path):
+    from openpyxl import Workbook
+
+    from ocr_pakiet.packages import PackageSource
+
+    p = tmp_path / "pakiety.xlsx"
+    Workbook().save(p)  # pusty plik – bez kolumn
+    src = PackageSource(str(p), str(tmp_path / "kopia.xlsx"))
+    src.refresh(force=True)
+    assert not src.ok and "Błąd" in src.status

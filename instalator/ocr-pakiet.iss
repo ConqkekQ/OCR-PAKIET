@@ -36,12 +36,11 @@ Name: "autostart"; Description: "Uruchamiaj automatycznie po włączeniu kompute
 [Files]
 Source: "..\dist\OCR-PAKIET.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\pakiety_szablon.xlsx"; DestDir: "{app}"; Flags: ignoreversion
-; plik pakietów zakładany tylko przy pierwszej instalacji – aktualizacja i odinstalowanie go nie ruszają
-Source: "..\pakiety_szablon.xlsx"; DestDir: "{app}"; DestName: "pakiety.xlsx"; Flags: onlyifdoesntexist uninsneveruninstall
+; pakiety program czyta ze wspólnego pliku Z:\PAKIETY\pakiety.xlsx (ustawienie w config.json)
 
 [Icons]
 Name: "{group}\OCR-PAKIET"; Filename: "{app}\OCR-PAKIET.exe"
-Name: "{group}\Plik pakietów (Excel)"; Filename: "{app}\pakiety.xlsx"
+Name: "{group}\Plik pakietów (Excel)"; Filename: "Z:\PAKIETY\pakiety.xlsx"
 Name: "{group}\Odinstaluj OCR-PAKIET"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\OCR-PAKIET"; Filename: "{app}\OCR-PAKIET.exe"; Tasks: desktopicon
 Name: "{userstartup}\OCR-PAKIET"; Filename: "{app}\OCR-PAKIET.exe"; Tasks: autostart
@@ -51,4 +50,5 @@ Filename: "{app}\OCR-PAKIET.exe"; Description: "Uruchom OCR-PAKIET"; Flags: nowa
 
 [UninstallDelete]
 Type: files; Name: "{app}\config.json"
+Type: files; Name: "{app}\pakiety_kopia.xlsx"
 Type: filesandordirs; Name: "{app}\debug"

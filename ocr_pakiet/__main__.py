@@ -12,9 +12,8 @@ import sys
 def test_image(path: str) -> int:
     from PIL import Image
 
-    from .config import Config, ensure_packages_file
+    from .config import Config, package_source
     from .ocr_engine import create_engine
-    from .packages import PackageBook
     from .reader import GridReader
 
     cfg = Config.load()
@@ -30,11 +29,9 @@ def test_image(path: str) -> int:
         return 1
     print(f"Obszar listy: {res.layout}")
     print(f"Widać koniec listy: {'tak' if res.reached_end else 'nie'}\n")
-    try:
-        book = PackageBook(ensure_packages_file(cfg))
-    except Exception as e:  # noqa: BLE001
-        print(f"(Pakiety niewczytane: {e})")
-        book = None
+    src = package_source(cfg)
+    print(src.status)
+    book = src.book if src.ok else None
     codes = set()
     for r in res.rows:
         m = book.matcher.match(r.code) if book else None
