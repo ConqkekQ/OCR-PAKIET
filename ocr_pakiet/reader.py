@@ -17,6 +17,7 @@ import numpy as np
 from PIL import Image, ImageOps
 
 from .ocr_engine import OcrEngine, Word
+from .packages import levenshtein
 
 
 @dataclass
@@ -111,31 +112,34 @@ class GridReader:
         inv = 1 / scale
 
         def find(label: str) -> list[Word]:
+            # OCR potrafi przekręcić nagłówek (np. "Nazv,'a"), więc dopuszczamy 1 błąd
             target = _norm(label)
-            return [w for w in words if _norm(w.text) == target]
+            tol = 1 if len(target) >= 4 else 0
+            return [w for w in words if levenshtein(_norm(w.text), target, tol) <= tol]
 
-        kod_cands = find(self.cfg.kolumna_kod)
-        naz_cands = find(self.cfg.kolumna_nastepna)
-        lp_cands = find(self.cfg.kolumna_lp)
-        best = None
-        for t in kod_cands:
-            same_row = [n for n in naz_cands if abs(n.cy - t.cy) < t.h and n.x > t.x]
-            if not same_row:
-                continue
-            n = min(same_row, key=lambda n: n.x)
-            lps = [p for p in lp_cands if abs(p.cy - t.cy) < t.h and p.x < t.x]
-            lp = max(lps, key=lambda p: p.x) if lps else None
-            best = (t, n, lp)
-            break
-        if not best:
+        kod_cands = sorted(find(self.cfg.kolumna_kod), key=lambda w: w.y)
+        if not kod_cands:
             return None
-        t, n, lp = best
-        x0 = (min(lp.x, t.x - 80) if lp else t.x - 80) - 6
-        x1 = n.x - 3
+        t = kod_cands[0]
+        naz = [n for n in find(self.cfg.kolumna_nastepna) if abs(n.cy - t.cy) < 1.5 * t.h and n.x > t.x]
+        lps = [p for p in find(self.cfg.kolumna_lp) if abs(p.cy - t.cy) < 1.5 * t.h and p.x < t.x]
+        lp = max(lps, key=lambda p: p.x) if lps else None
+
         y0 = t.y + t.h + 3
         # dół siatki: etykieta "Filtr" pod listą, a jeśli jej nie ma – dół okna
         filtr = [w for w in words if _norm(w.text).startswith("filtr") and w.y > t.y]
         y1 = (min(f.y for f in filtr) - 22) if filtr else work.height - 60 * scale
+
+        # lewa krawędź: kolumna Lp. (numery stoją tuż przed kodem)
+        x0 = (min(lp.x, t.x - 70 * scale) if lp else t.x - 70 * scale) - 6
+        # prawa krawędź: początek kolumny Nazwa, a gdy OCR jej nie znalazł –
+        # koniec najdłuższego kodu pod nagłówkiem "Towar"
+        if naz:
+            x1 = min(n.x for n in naz) - 3
+        else:
+            codes = [w for w in words if y0 <= w.y <= y1 and abs(w.x - t.x) < 12 * scale]
+            right = max((w.x + w.w for w in codes), default=t.x + 110 * scale)
+            x1 = right + 4 * scale
         lay = GridLayout(
             x0=max(0, int(x0 * inv)),
             x1=int(x1 * inv),
