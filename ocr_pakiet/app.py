@@ -10,6 +10,7 @@ import tkinter as tk
 import traceback
 from tkinter import filedialog, messagebox
 
+from . import __copyright__, __version__
 from .config import DOMYSLNY_PLIK_PAKIETOW, Config, package_source, resource
 from .ocr_engine import create_engine
 from .order_state import OrderState, order_key
@@ -306,6 +307,9 @@ class App:
         tk.Button(btns, text="Anuluj", font=("Segoe UI", 9), command=win.destroy).pack(side="right")
         tk.Button(btns, text="Zapisz", font=("Segoe UI", 9, "bold"), bg=ACCENT, fg="white",
                   command=save).pack(side="right", padx=6)
+        tk.Frame(win, bg="#d8dbe0", height=1).pack(fill="x", padx=12)
+        tk.Label(win, text=f"OCR-PAKIET {__version__}\n{__copyright__}", bg=BG, fg=MUTED,
+                 font=("Segoe UI", 8), justify="left", anchor="w").pack(fill="x", padx=12, pady=(6, 10))
         entry.focus_set()
 
     def copy_code(self, event):

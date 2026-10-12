@@ -1,0 +1,33 @@
+OCR-PAKIET
+Copyright (c) 2026 Wojciech Kociuba. Wszelkie prawa zastrzeżone.
+
+1. Program OCR-PAKIET (kod źródłowy, pliki wykonywalne, instalator, ikona
+   i dokumentacja, dalej „Program”) jest utworem w rozumieniu ustawy z dnia
+   4 lutego 1994 r. o prawie autorskim i prawach pokrewnych. Jego autorem
+   i wyłącznym właścicielem autorskich praw majątkowych jest Wojciech Kociuba.
+
+2. Korzystanie z Programu jest dozwolone wyłącznie na podstawie licencji
+   udzielonej przez autora w formie pisemnej lub elektronicznej, w zakresie
+   w niej określonym.
+
+3. Bez uprzedniej pisemnej zgody autora zabronione jest w szczególności:
+   kopiowanie, modyfikowanie, tłumaczenie, rozpowszechnianie, udostępnianie
+   osobom trzecim, sprzedaż, udzielanie sublicencji oraz tworzenie utworów
+   zależnych na podstawie Programu, w całości lub w części, z zastrzeżeniem
+   uprawnień wynikających z bezwzględnie obowiązujących przepisów prawa.
+
+4. Program jest dostarczany w stanie, w jakim się znajduje („tak jak jest”),
+   bez jakichkolwiek gwarancji. Program ma charakter pomocniczy: podpowiedzi
+   wynikają z automatycznego odczytu ekranu i mogą być niepełne lub błędne.
+   Za treść zamówień odpowiada osoba je wprowadzająca. W najszerszym zakresie
+   dopuszczalnym przez prawo autor nie ponosi odpowiedzialności za szkody
+   wynikłe z korzystania z Programu lub z niemożności korzystania z niego.
+
+5. Program zawiera komponenty osób trzecich udostępnione na ich własnych
+   licencjach, które nie są objęte niniejszymi zastrzeżeniami, w tym:
+   Python (PSF License), Pillow (MIT-CMU), NumPy (BSD), openpyxl (MIT),
+   pywin32 (PSF License), winocr (MIT), pytesseract (Apache 2.0),
+   PyInstaller (GPL z wyjątkiem dla programu rozruchowego), Inno Setup
+   (licencja Inno Setup).
+
+Kontakt w sprawie licencji: Wojciech Kociuba.

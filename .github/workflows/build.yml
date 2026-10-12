@@ -37,10 +37,13 @@ jobs:
           else { $v = "0.0.${{ github.run_number }}" }
           "version=$v" >> $env:GITHUB_OUTPUT
 
+      - name: Metadane pliku .exe (autor, wersja)
+        run: python narzedzia/wersja_exe.py ${{ steps.ver.outputs.version }} version_info.txt
+
       - name: Budowanie OCR-PAKIET.exe
         run: >
           pyinstaller --noconfirm --onefile --windowed --name OCR-PAKIET
-          --icon assets/ikona.ico
+          --icon assets/ikona.ico --version-file version_info.txt
           --add-data "pakiety_szablon.xlsx;."
           --add-data "assets/ikona.ico;assets"
           --collect-all winrt --hidden-import win32timezone

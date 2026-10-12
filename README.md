@@ -140,3 +140,8 @@ ocr_pakiet/
 tests/            testy logiki: python -m pytest tests
 narzedzia/        generator szablonu pakiety_szablon.xlsx
 ```
+
+## Autor i licencja
+
+Autor: **Wojciech Kociuba**. © 2026 Wojciech Kociuba. Wszelkie prawa zastrzeżone.
+Korzystanie z programu wymaga licencji autora – szczegóły w pliku [LICENSE](LICENSE).

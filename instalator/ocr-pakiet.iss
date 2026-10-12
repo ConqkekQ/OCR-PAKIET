@@ -10,7 +10,8 @@ AppId={{5B7E2C41-8A3F-4C0E-9C55-0C2D7A1B6E31}
 AppName=OCR-PAKIET
 AppVersion={#AppVersion}
 AppVerName=OCR-PAKIET {#AppVersion}
-AppPublisher=Ravet Sp. z o.o.
+AppPublisher=Wojciech Kociuba
+AppCopyright=© 2026 Wojciech Kociuba. Wszelkie prawa zastrzeżone.
 DefaultDirName={autopf}\OCR-PAKIET
 DefaultGroupName=OCR-PAKIET
 DisableProgramGroupPage=yes
@@ -36,6 +37,7 @@ Name: "autostart"; Description: "Uruchamiaj automatycznie po włączeniu kompute
 [Files]
 Source: "..\dist\OCR-PAKIET.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\pakiety_szablon.xlsx"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENCJA.txt"; Flags: ignoreversion
 ; pakiety program czyta ze wspólnego pliku Z:\PAKIETY\pakiety.xlsx (ustawienie w config.json)
 
 [Icons]

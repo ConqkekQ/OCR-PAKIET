@@ -9,3 +9,4 @@ config.json
 # prawdziwe pakiety firmy trzymamy lokalnie (szablon jest w repo)
 pakiety.xlsx
 ~$*.xlsx
+version_info.txt
