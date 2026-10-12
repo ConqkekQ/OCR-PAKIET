@@ -1,6 +1,7 @@
 """Uruchomienie:
     python -m ocr_pakiet                 – okienko podpowiedzi (tryb normalny)
     python -m ocr_pakiet --obraz zrzut.png  – test odczytu na zapisanym zrzucie ekranu
+    OCR-PAKIET.exe --obraz zrzut.png --wynik wynik.txt  – to samo w wersji .exe
 """
 from __future__ import annotations
 
@@ -48,8 +49,19 @@ def test_image(path: str) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(prog="ocr_pakiet")
     ap.add_argument("--obraz", help="test odczytu na pliku ze zrzutem okna ZS")
+    ap.add_argument("--wynik", help="zapisz wynik testu do pliku (dla wersji .exe bez konsoli)")
     args = ap.parse_args()
     if args.obraz:
+        if args.wynik:
+            with open(args.wynik, "w", encoding="utf-8") as f:
+                sys.stdout = sys.stderr = f
+                try:
+                    return test_image(args.obraz)
+                except Exception:  # noqa: BLE001
+                    import traceback
+
+                    traceback.print_exc()
+                    return 2
         return test_image(args.obraz)
     from .app import main as app_main
 

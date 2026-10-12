@@ -71,7 +71,19 @@ def ensure_packages_file(cfg: Config) -> str:
 
     path = cfg.resolve(cfg.plik_pakietow)
     if not os.path.exists(path):
-        tpl = os.path.join(app_dir(), "pakiety_szablon.xlsx")
-        if os.path.exists(tpl):
-            shutil.copyfile(tpl, path)
+        # szablon leży obok programu albo jest spakowany w pliku .exe
+        for base in (app_dir(), getattr(sys, "_MEIPASS", "")):
+            tpl = os.path.join(base, "pakiety_szablon.xlsx")
+            if base and os.path.exists(tpl):
+                shutil.copyfile(tpl, path)
+                break
     return path
+
+
+def resource(*parts: str) -> str | None:
+    """Plik zasobu: obok programu albo spakowany w .exe (PyInstaller)."""
+    for base in (app_dir(), getattr(sys, "_MEIPASS", "")):
+        p = os.path.join(base, *parts)
+        if base and os.path.exists(p):
+            return p
+    return None

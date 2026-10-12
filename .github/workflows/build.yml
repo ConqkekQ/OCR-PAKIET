@@ -1,0 +1,88 @@
+name: Budowanie programu
+
+# Wersja do pobrania powstaje po wypchnięciu tagu, np. v0.2.0.
+# Ręcznie: zakładka Actions -> "Budowanie programu" -> Run workflow (pliki w Artifacts).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Zależności
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller pytest
+
+      - name: Testy logiki
+        run: python -m pytest -q tests
+
+      - name: Wersja
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
+          else { $v = "0.0.${{ github.run_number }}" }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Budowanie OCR-PAKIET.exe
+        run: >
+          pyinstaller --noconfirm --onefile --windowed --name OCR-PAKIET
+          --icon assets/ikona.ico
+          --add-data "pakiety_szablon.xlsx;."
+          --add-data "assets/ikona.ico;assets"
+          --collect-all winrt --hidden-import win32timezone
+          --distpath dist start.py
+
+      - name: Test odczytu (kod źródłowy i gotowy .exe)
+        shell: pwsh
+        run: |
+          python tests/syntetyczny_zs.py syn.png
+          python -m ocr_pakiet --obraz syn.png
+          Start-Process -FilePath dist\OCR-PAKIET.exe -ArgumentList "--obraz","syn.png","--wynik","wynik.txt" -Wait
+          Write-Host "---- wynik .exe ----"
+          Get-Content wynik.txt -Encoding utf8
+          $out = Get-Content wynik.txt -Raw -Encoding utf8
+          if ($out -match "Traceback|No module named|ModuleNotFoundError") {
+            Write-Error "Plik .exe nie uruchomił się poprawnie"; exit 1
+          }
+          if ($out -notmatch "MREKLATS100") {
+            Write-Warning "OCR na serwerze GitHuba nie odczytał listy – sprawdź na komputerze z Windows 10/11"
+          }
+
+      - name: Instalator (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc "/DAppVersion=${{ steps.ver.outputs.version }}" instalator\ocr-pakiet.iss
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OCR-PAKIET-${{ steps.ver.outputs.version }}
+          path: |
+            dist/OCR-PAKIET-Setup.exe
+            dist/OCR-PAKIET.exe
+
+      - name: Wydanie (Release)
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OCR-PAKIET ${{ steps.ver.outputs.version }}
+          files: |
+            dist/OCR-PAKIET-Setup.exe
+            dist/OCR-PAKIET.exe
+          body: |
+            **Instalacja:** pobierz `OCR-PAKIET-Setup.exe`, uruchom i klikaj „Dalej”. Nie potrzeba uprawnień administratora.
+            Wersja przenośna bez instalacji: `OCR-PAKIET.exe`.

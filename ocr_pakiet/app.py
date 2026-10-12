@@ -9,7 +9,7 @@ import tkinter as tk
 import traceback
 from tkinter import messagebox
 
-from .config import Config, ensure_packages_file
+from .config import Config, ensure_packages_file, resource
 from .ocr_engine import create_engine
 from .order_state import OrderState, order_key
 from .packages import PackageBook
@@ -165,6 +165,12 @@ class App:
 
         root = self.root = tk.Tk()
         root.title("Pakiety – podpowiedzi")
+        ico = resource("assets", "ikona.ico")
+        if ico:
+            try:
+                root.iconbitmap(ico)
+            except tk.TclError:
+                pass
         root.configure(bg=BG)
         root.attributes("-topmost", True)
         try:
@@ -324,5 +330,19 @@ class App:
         self.root.mainloop()
 
 
+def _already_running() -> bool:
+    """Blokada drugiej kopii (np. autostart + dwuklik na skrót)."""
+    import ctypes
+
+    ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\OCR-PAKIET-nakladka")
+    return ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
+
+
 def main():
+    if _already_running():
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo("Pakiety", "Nakładka OCR-PAKIET jest już uruchomiona.")
+        root.destroy()
+        return
     App().run()

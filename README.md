@@ -29,14 +29,45 @@ Lista pozycji często nie mieści się na ekranie. Są dwa sposoby, które dzia�
 
 Program rozpoznaje koniec listy po pustym miejscu pod ostatnią pozycją.
 
-## Instalacja (stanowisko z Pythonem)
+## Instalacja na stanowisku
+
+1. Wejdź w [Releases](../../releases/latest) i pobierz **`OCR-PAKIET-Setup.exe`**.
+2. Uruchom plik i klikaj „Dalej”. Uprawnienia administratora nie są potrzebne.
+   Można zaznaczyć skrót na pulpicie i automatyczne uruchamianie z Windowsem.
+3. Gotowe: okienko podpowiedzi pojawi się z prawej strony ekranu.
+
+Windows może przy pierwszym uruchomieniu pokazać ostrzeżenie SmartScreen („System Windows ochronił ten komputer”),
+bo program nie ma płatnego podpisu cyfrowego. Kliknij **Więcej informacji → Uruchom mimo to**. Jeśli program
+zablokuje antywirus, poproś IT o dodanie go do wyjątków.
+
+Aktualizacja: pobierz nowszy `OCR-PAKIET-Setup.exe` i zainstaluj na starą wersję. Plik pakietów i ustawienia zostają.
+
+Program instaluje się w `%LOCALAPPDATA%\Programs\OCR-PAKIET`. Tam leżą `pakiety.xlsx` i `config.json`;
+do pliku pakietów jest też skrót w menu Start („Plik pakietów (Excel)”).
+
+**Wersja przenośna:** `OCR-PAKIET.exe` z tej samej strony działa bez instalacji, np. z pendrive’a lub dysku sieciowego.
+
+### Wspólny plik pakietów dla całego działu
+
+Żeby nie uzupełniać pakietów na każdym komputerze osobno, połóż `pakiety.xlsx` na dysku sieciowym i w `config.json`
+każdego stanowiska wpisz pełną ścieżkę, np. `"plik_pakietow": "\\\\serwer\\sprzedaz\\pakiety.xlsx"`.
+Zmiany w pliku program wczytuje sam.
+
+### Nowa wersja programu (dla opiekuna repozytorium)
+
+GitHub sam buduje instalator po wypchnięciu tagu wersji:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+Po kilku minutach w Releases pojawi się `OCR-PAKIET-Setup.exe` i `OCR-PAKIET.exe`.
+
+### Uruchamianie z kodu źródłowego (dla programisty)
 
 1. Zainstaluj [Python 3.10+](https://www.python.org/downloads/) i zaznacz *Add python.exe to PATH*.
-2. Pobierz repozytorium (*Code → Download ZIP*) i rozpakuj, np. do `C:\OCR-PAKIET`.
-3. Uruchom `instaluj.bat`.
-4. Uruchamiaj programem `uruchom.bat`. Przy pierwszym starcie powstaną `pakiety.xlsx` (kopia szablonu) i `config.json`.
-
-**Stanowiska bez Pythona:** na jednym komputerze uruchom `zbuduj_exe.bat` i skopiuj folder `dist\OCR-PAKIET` na pozostałe.
+2. Uruchom `instaluj.bat`, potem `uruchom.bat`.
 
 Windows OCR potrzebuje pakietu językowego OCR. Zwykle jest zainstalowany razem z językiem polskim lub angielskim.
 Jeśli program zgłosi jego brak, uruchom PowerShell jako administrator:
@@ -61,8 +92,7 @@ Arkusz **Pakiety**: jeden wiersz = jeden towar w pakiecie.
 Arkusz **Towary** (opcjonalny, zalecany): pełna lista kodów towarów z XL, np. wklejona z eksportu kartoteki.
 Dzięki niej program pewniej odróżnia błąd odczytu od towaru spoza pakietów.
 
-Po zapisaniu pliku program sam wczyta zmiany (lub kliknij **↻ Pakiety**). Plik może leżeć na dysku sieciowym:
-wpisz pełną ścieżkę w `config.json` → `plik_pakietow`, a wszystkie stanowiska będą korzystać z jednej listy.
+Po zapisaniu pliku program sam wczyta zmiany (lub kliknij **↻ Pakiety**). Plik może leżeć na dysku sieciowym (patrz wyżej).
 
 ## Wymagania wobec okna XL
 
@@ -89,10 +119,10 @@ wpisz pełną ścieżkę w `config.json` → `plik_pakietow`, a wszystkie stanow
 Zrób zrzut okna ZS (Win+Shift+S → zapisz jako PNG) i uruchom w folderze programu:
 
 ```bat
-.venv\Scripts\python -m ocr_pakiet --obraz zrzut.png
+"%LOCALAPPDATA%\Programs\OCR-PAKIET\OCR-PAKIET.exe" --obraz zrzut.png --wynik wynik.txt
 ```
 
-Program wypisze odczytane Lp. i kody oraz pasujące pakiety. Jeśli kody są źle czytane,
+Program zapisze do `wynik.txt` odczytane Lp. i kody oraz pasujące pakiety. Jeśli kody są źle czytane,
 zwiększ `skala` (np. do 4) albo włącz `debug_zapis_obrazow` i sprawdź wycinki w folderze `debug\`.
 
 ## Dla programisty

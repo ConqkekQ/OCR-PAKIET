@@ -69,11 +69,13 @@ def parse_line(words: list[Word]) -> tuple[int, str] | None:
     first = tokens[0]
     lp = _as_lp(first)
     rest = tokens[1:]
-    if lp is None and len(first) > 5:
-        # Lp. i kod sklejone w jedno słowo, np. "00001LHPINMV25"
-        lp = _as_lp(first[:5])
-        if lp is not None:
-            rest = [first[5:]] + rest
+    if lp is None and len(first) > 4:
+        # Lp. i kod sklejone w jedno słowo, np. "00001LHPINMV25" (Lp. w XL ma 5 cyfr,
+        # ale OCR potrafi dodać lub zgubić jedno zero)
+        for n in (5, 6, 4):
+            if len(first) > n and (cand := _as_lp(first[:n])) is not None:
+                lp, rest = cand, [first[n:]] + rest
+                break
     if lp is None or not rest:
         return None
     code = "".join(rest).upper()
