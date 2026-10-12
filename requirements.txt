@@ -1,0 +1,7 @@
+pillow>=10
+numpy>=1.24
+openpyxl>=3.1
+pywin32>=306; sys_platform == "win32"
+winocr>=0.0.15; sys_platform == "win32"
+# zapasowy silnik OCR (wymaga osobnej instalacji programu Tesseract)
+pytesseract>=0.3.10

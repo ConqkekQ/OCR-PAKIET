@@ -1,0 +1,304 @@
+"""Okienko podpowiedzi pakietów – zawsze na wierzchu, obok Comarch ERP XL."""
+from __future__ import annotations
+
+import hashlib
+import queue
+import threading
+import time
+import tkinter as tk
+import traceback
+from tkinter import messagebox
+
+from .config import Config, ensure_packages_file
+from .ocr_engine import create_engine
+from .order_state import OrderState, order_key
+from .packages import PackageBook
+from .reader import GridReader
+
+BG = "#f7f7f5"
+FG = "#1f2328"
+MUTED = "#6b7078"
+OK = "#1a7f37"
+TODO = "#b35900"
+ACCENT = "#0b5cad"
+WARN = "#a40e26"
+
+
+class Worker(threading.Thread):
+    """Wątek w tle: zrzut okna -> OCR -> stan zamówienia -> podpowiedzi."""
+
+    def __init__(self, cfg: Config, out: queue.Queue):
+        super().__init__(daemon=True)
+        self.cfg = cfg
+        self.out = out
+        self.paused = threading.Event()
+        self.scan_request = threading.Event()
+        self.reset_request = threading.Event()
+        self.reload_request = threading.Event()
+        self.state = OrderState()
+        self._last_hash = None
+
+    def run(self):
+        import ctypes
+
+        from . import winutil
+
+        try:  # Windows OCR (WinRT) w wątku pobocznym wymaga zainicjowanego COM
+            ctypes.windll.ole32.CoInitializeEx(None, 0)
+        except Exception:
+            pass
+        try:
+            engine = create_engine(self.cfg.ocr_silnik, self.cfg.ocr_jezyki, self.cfg.tesseract_sciezka)
+            reader = GridReader(engine, self.cfg)
+            book = PackageBook(ensure_packages_file(self.cfg))
+        except Exception as e:  # noqa: BLE001
+            self.out.put(("fatal", str(e)))
+            return
+        self.out.put(("engine", f"{engine.name} · pakietów: {len(book.packages)}"))
+
+        while True:
+            try:
+                if self.reload_request.is_set() or book.changed_on_disk():
+                    self.reload_request.clear()
+                    book.load()
+                    self._last_hash = None
+                    self.out.put(("engine", f"{engine.name} · pakietów: {len(book.packages)}"))
+                if self.reset_request.is_set():
+                    self.reset_request.clear()
+                    self.state.reset(self.state.key)
+                    self._last_hash = None
+
+                win = winutil.find_order_window(self.cfg.okno_tytul_regex)
+                if win is None:
+                    self.out.put(("idle", "Otwórz zamówienie sprzedaży (ZS) w Comarch ERP XL"))
+                    time.sleep(self.cfg.interwal_s)
+                    continue
+                hwnd, title = win
+
+                if self.scan_request.is_set():
+                    self.scan_request.clear()
+                    self._full_scan(hwnd, title, reader, book)
+                elif not self.paused.is_set():
+                    self._quick_read(hwnd, title, reader, book)
+            except Exception as e:  # noqa: BLE001
+                self.out.put(("error", f"{e}\n{traceback.format_exc(limit=2)}"))
+            time.sleep(self.cfg.interwal_s)
+
+    def _quick_read(self, hwnd, title, reader: GridReader, book: PackageBook):
+        from . import winutil
+
+        img = winutil.capture(hwnd)
+        if img is None:
+            return
+        h = hashlib.md5(img.resize((160, 80)).tobytes()).hexdigest() + title
+        if h == self._last_hash:
+            return  # nic się nie zmieniło na ekranie
+        self._last_hash = h
+        res = reader.read(img)
+        if res.error:
+            self.out.put(("warn", res.error))
+            return
+        self.state.apply(res, title)
+        self._publish(book)
+
+    def _full_scan(self, hwnd, title, reader: GridReader, book: PackageBook):
+        from .scanner import full_scan
+
+        self.out.put(("busy", "Pełny skan – nie ruszaj myszą…"))
+        rows, err = full_scan(hwnd, reader, self.cfg.pelny_skan_zabki,
+                              progress=lambda n: self.out.put(("busy", f"Pełny skan… odczytano {n} poz.")))
+        if err:
+            self.out.put(("warn", err))
+            return
+        self.state.replace(rows, order_key(title))
+        self._last_hash = None
+        self._publish(book)
+
+    def _publish(self, book: PackageBook):
+        matched: dict[int, str] = {}
+        for lp, code in self.state.rows.items():
+            m = book.matcher.match(code)
+            if m:
+                matched[lp] = m
+        suggestions = book.suggest(set(matched.values()))
+        self.out.put(("result", {
+            "key": self.state.key,
+            "count": len(self.state.rows),
+            "max_lp": max(self.state.rows) if self.state.rows else 0,
+            "missing": self.state.missing_lps(),
+            "complete": self.state.complete,
+            "suggestions": suggestions,
+            "names": book.names,
+        }))
+
+
+class App:
+    def __init__(self):
+        from . import winutil
+
+        winutil.set_dpi_aware()  # przed utworzeniem okna Tk
+        self.cfg = Config.load()
+        self.q: queue.Queue = queue.Queue()
+        self.worker = Worker(self.cfg, self.q)
+
+        root = self.root = tk.Tk()
+        root.title("Pakiety – podpowiedzi")
+        root.configure(bg=BG)
+        root.attributes("-topmost", True)
+        try:
+            root.attributes("-toolwindow", True)
+        except tk.TclError:
+            pass
+        k = max(1.0, root.winfo_fpixels("1i") / 96)  # skalowanie ekranu (125%, 150%…)
+        sw = root.winfo_screenwidth()
+        w, h = int(380 * k), int(560 * k)
+        root.geometry(f"{w}x{h}+{sw - w - int(20 * k)}+{int(80 * k)}")
+        root.minsize(int(300 * k), int(260 * k))
+
+        top = tk.Frame(root, bg=BG)
+        top.pack(fill="x", padx=10, pady=(8, 2))
+        self.lbl_order = tk.Label(top, text="—", bg=BG, fg=FG, font=("Segoe UI", 11, "bold"), anchor="w")
+        self.lbl_order.pack(fill="x")
+        self.lbl_info = tk.Label(top, text="Uruchamianie…", bg=BG, fg=MUTED, font=("Segoe UI", 9),
+                                 anchor="w", justify="left", wraplength=int(350 * k))
+        self.lbl_info.pack(fill="x")
+
+        bar = tk.Frame(root, bg=BG)
+        bar.pack(fill="x", padx=10, pady=4)
+        btn = dict(font=("Segoe UI", 9), relief="flat", bd=0, padx=8, pady=4, cursor="hand2")
+        tk.Button(bar, text="⤓ Pełny skan", bg=ACCENT, fg="white", activebackground="#0a4f94",
+                  activeforeground="white", command=self.worker.scan_request.set, **btn).pack(side="left")
+        self.btn_pause = tk.Button(bar, text="⏸ Pauza", bg="#e4e6ea", fg=FG, command=self.toggle_pause, **btn)
+        self.btn_pause.pack(side="left", padx=4)
+        tk.Button(bar, text="Wyczyść", bg="#e4e6ea", fg=FG, command=self.worker.reset_request.set,
+                  **btn).pack(side="left")
+        tk.Button(bar, text="↻ Pakiety", bg="#e4e6ea", fg=FG, command=self.worker.reload_request.set,
+                  **btn).pack(side="right")
+
+        body = tk.Frame(root, bg=BG)
+        body.pack(fill="both", expand=True, padx=10, pady=(4, 4))
+        self.txt = tk.Text(body, bg="white", fg=FG, font=("Segoe UI", 10), relief="flat", wrap="word",
+                           padx=10, pady=8, cursor="arrow", highlightthickness=1,
+                           highlightbackground="#d8dbe0")
+        sb = tk.Scrollbar(body, command=self.txt.yview)
+        self.txt.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+        self.txt.pack(side="left", fill="both", expand=True)
+        t = self.txt
+        t.tag_configure("pk", font=("Segoe UI", 10, "bold"), spacing1=8)
+        t.tag_configure("pk_done", font=("Segoe UI", 10, "bold"), foreground=OK, spacing1=8)
+        t.tag_configure("ok", foreground=OK)
+        t.tag_configure("todo", foreground=TODO, font=("Segoe UI", 10, "bold"))
+        t.tag_configure("code", foreground=ACCENT, underline=True)
+        t.tag_configure("muted", foreground=MUTED, font=("Segoe UI", 9))
+        t.tag_configure("note", foreground=MUTED, font=("Segoe UI", 9, "italic"), lmargin1=18, lmargin2=18)
+        t.tag_bind("code", "<Enter>", lambda e: t.configure(cursor="hand2"))
+        t.tag_bind("code", "<Leave>", lambda e: t.configure(cursor="arrow"))
+        t.tag_bind("code", "<Button-1>", self.copy_code)
+
+        self.lbl_foot = tk.Label(root, text="", bg=BG, fg=MUTED, font=("Segoe UI", 8), anchor="w")
+        self.lbl_foot.pack(fill="x", padx=10, pady=(0, 6))
+        self._render_text("Szukam okna zamówienia…", "muted")
+
+    # ---------- akcje ----------
+    def toggle_pause(self):
+        if self.worker.paused.is_set():
+            self.worker.paused.clear()
+            self.btn_pause.configure(text="⏸ Pauza")
+        else:
+            self.worker.paused.set()
+            self.btn_pause.configure(text="▶ Wznów")
+
+    def copy_code(self, event):
+        idx = self.txt.index(f"@{event.x},{event.y}")
+        rng = self.txt.tag_prevrange("code", f"{idx}+1c")
+        if not rng:
+            return
+        code = self.txt.get(*rng).strip()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(code)
+        self.lbl_foot.configure(text=f"Skopiowano kod: {code}")
+
+    # ---------- rysowanie ----------
+    def _render_text(self, msg: str, tag: str = ""):
+        self.txt.configure(state="normal")
+        self.txt.delete("1.0", "end")
+        self.txt.insert("end", msg, tag)
+        self.txt.configure(state="disabled")
+
+    def render(self, d: dict):
+        self.lbl_order.configure(text=d["key"] or "Zamówienie")
+        info = f"Odczytane pozycje: {d['count']}"
+        if d["max_lp"]:
+            info += f" (Lp. 1–{d['max_lp']})"
+        if d["missing"]:
+            miss = ", ".join(map(str, d["missing"][:12])) + ("…" if len(d["missing"]) > 12 else "")
+            info += f"\n⚠ Nieodczytane Lp.: {miss} – przewiń listę lub użyj Pełnego skanu"
+            self.lbl_info.configure(fg=WARN)
+        elif not d["complete"]:
+            info += "\nLista może być dłuższa – przewiń w dół lub użyj Pełnego skanu"
+            self.lbl_info.configure(fg=TODO)
+        else:
+            info += " ✓ cała lista"
+            self.lbl_info.configure(fg=MUTED)
+        self.lbl_info.configure(text=info)
+
+        t = self.txt
+        t.configure(state="normal")
+        t.delete("1.0", "end")
+        sugg = d["suggestions"]
+        names = d["names"]
+        if not sugg:
+            t.insert("end", "Brak pakietów dla towarów w tym zamówieniu.", "muted")
+        for s in sugg:
+            p = s.package
+            if s.complete:
+                t.insert("end", f"✅ {p.name}  (komplet)\n", "pk_done")
+            else:
+                t.insert("end", f"📦 {p.name}  ({len(s.present)}/{len(p.items)})\n", "pk")
+            for it in p.items:
+                nm = it.name or names.get(it.code, "")
+                if it in s.missing:
+                    t.insert("end", "  ➕ dodaj ", "todo")
+                    t.insert("end", it.code, "code")
+                else:
+                    t.insert("end", "  ✔ jest  ", "ok")
+                    t.insert("end", it.code, "ok")
+                t.insert("end", f"  {nm}\n" if nm else "\n", "muted")
+            if p.note:
+                t.insert("end", f"{p.note}\n", "note")
+        t.configure(state="disabled")
+        self.lbl_foot.configure(text=f"Odświeżono {time.strftime('%H:%M:%S')} · kliknij kod, aby go skopiować")
+
+    def poll(self):
+        try:
+            while True:
+                kind, data = self.q.get_nowait()
+                if kind == "result":
+                    self.render(data)
+                elif kind == "idle":
+                    self.lbl_order.configure(text="—")
+                    self.lbl_info.configure(text=data, fg=MUTED)
+                elif kind in ("warn", "busy"):
+                    self.lbl_info.configure(text=data, fg=TODO)
+                elif kind == "engine":
+                    self.lbl_foot.configure(text=data)
+                elif kind == "error":
+                    self.lbl_info.configure(text="Błąd: " + data.splitlines()[0], fg=WARN)
+                    print(data)
+                elif kind == "fatal":
+                    messagebox.showerror("Pakiety – błąd uruchomienia", data)
+                    self.root.destroy()
+                    return
+        except queue.Empty:
+            pass
+        self.root.after(200, self.poll)
+
+    def run(self):
+        self.worker.start()
+        self.root.after(200, self.poll)
+        self.root.mainloop()
+
+
+def main():
+    App().run()

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+*.spec
+debug/
+config.json
+# prawdziwe pakiety firmy trzymamy lokalnie (szablon jest w repo)
+pakiety.xlsx
+~$*.xlsx

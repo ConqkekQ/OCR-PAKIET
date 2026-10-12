@@ -1,0 +1,77 @@
+"""Konfiguracja aplikacji (plik config.json obok programu)."""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from dataclasses import asdict, dataclass, field
+
+
+def app_dir() -> str:
+    """Folder programu: obok .exe (PyInstaller) albo katalog główny repozytorium."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+@dataclass
+class Config:
+    # Tytuł okna zamówienia w Comarch ERP XL (wyrażenie regularne)
+    okno_tytul_regex: str = r"Zam[óo]wienie sprzeda[żz]y"
+    # Plik z definicjami pakietów
+    plik_pakietow: str = "pakiety.xlsx"
+    # Co ile sekund odczytywać okno w trybie podglądu
+    interwal_s: float = 1.5
+    # Silnik OCR: "auto", "windows" lub "tesseract"
+    ocr_silnik: str = "auto"
+    # Język Windows OCR (kody to litery i cyfry, więc wystarczy dowolny łaciński)
+    ocr_jezyki: list = field(default_factory=lambda: ["pl", "en-US", "en"])
+    # Ścieżka do tesseract.exe (tylko gdy silnik = tesseract i nie ma go w PATH)
+    tesseract_sciezka: str = ""
+    # Powiększenie wycinka z kodami przed OCR (większe = dokładniej, wolniej)
+    skala: float = 3.0
+    # Nagłówki kolumn w siatce pozycji ZS
+    kolumna_lp: str = "Lp."
+    kolumna_kod: str = "Towar"
+    kolumna_nastepna: str = "Nazwa"
+    # Ile "ząbków" kółka myszy na jeden krok przy pełnym skanie (0 = automatycznie)
+    pelny_skan_zabki: int = 0
+    # Zapisywać wycinki do folderu debug/ (do diagnozy problemów z odczytem)
+    debug_zapis_obrazow: bool = False
+
+    @staticmethod
+    def path() -> str:
+        return os.path.join(app_dir(), "config.json")
+
+    @classmethod
+    def load(cls) -> "Config":
+        cfg = cls()
+        p = cls.path()
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                data = json.load(f)
+            for k, v in data.items():
+                if hasattr(cfg, k):
+                    setattr(cfg, k, v)
+        else:
+            cfg.save()
+        return cfg
+
+    def save(self) -> None:
+        with open(self.path(), "w", encoding="utf-8") as f:
+            json.dump(asdict(self), f, ensure_ascii=False, indent=2)
+
+    def resolve(self, name: str) -> str:
+        return name if os.path.isabs(name) else os.path.join(app_dir(), name)
+
+
+def ensure_packages_file(cfg: Config) -> str:
+    """Zwraca ścieżkę pliku pakietów; przy pierwszym uruchomieniu kopiuje szablon."""
+    import shutil
+
+    path = cfg.resolve(cfg.plik_pakietow)
+    if not os.path.exists(path):
+        tpl = os.path.join(app_dir(), "pakiety_szablon.xlsx")
+        if os.path.exists(tpl):
+            shutil.copyfile(tpl, path)
+    return path
