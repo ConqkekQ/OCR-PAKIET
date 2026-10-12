@@ -90,6 +90,7 @@ class GridReader:
         self.engine = engine
         self.cfg = cfg
         self.layout: GridLayout | None = None
+        self.last_header_lines: list[str] = []
         self._debug_dir = None
         if cfg.debug_zapis_obrazow:
             from .config import app_dir
@@ -106,6 +107,7 @@ class GridReader:
             (int(region.width * scale), int(region.height * scale)), Image.LANCZOS)
         lines = self.engine.read(work)
         words = [w for ln in lines for w in ln]
+        self.last_header_lines = [" ".join(w.text for w in ln) for ln in lines]  # do diagnozy
         inv = 1 / scale
 
         def find(label: str) -> list[Word]:

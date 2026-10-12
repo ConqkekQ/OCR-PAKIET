@@ -20,9 +20,13 @@ def test_image(path: str) -> int:
     cfg = Config.load()
     engine = create_engine(cfg.ocr_silnik, cfg.ocr_jezyki, cfg.tesseract_sciezka)
     print(f"Silnik OCR: {engine.name}")
-    res = GridReader(engine, cfg).read(Image.open(path).convert("RGB"))
+    reader = GridReader(engine, cfg)
+    res = reader.read(Image.open(path).convert("RGB"))
     if res.error:
         print("BŁĄD:", res.error)
+        print("\nTekst odczytany z lewej połowy okna (do diagnozy):")
+        for ln in reader.last_header_lines[:40]:
+            print("  ", ln)
         return 1
     print(f"Obszar listy: {res.layout}")
     print(f"Widać koniec listy: {'tak' if res.reached_end else 'nie'}\n")
@@ -47,6 +51,11 @@ def test_image(path: str) -> int:
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")  # polskie znaki w konsoli Windows
+        except Exception:  # noqa: BLE001
+            pass
     ap = argparse.ArgumentParser(prog="ocr_pakiet")
     ap.add_argument("--obraz", help="test odczytu na pliku ze zrzutem okna ZS")
     ap.add_argument("--wynik", help="zapisz wynik testu do pliku (dla wersji .exe bez konsoli)")
