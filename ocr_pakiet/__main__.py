@@ -20,6 +20,9 @@ def test_image(path: str) -> int:
     engine = create_engine(cfg.ocr_silnik, cfg.ocr_jezyki, cfg.tesseract_sciezka)
     print(f"Silnik OCR: {engine.name}")
     reader = GridReader(engine, cfg)
+    src = package_source(cfg)
+    if src.ok:
+        reader.code_fixer = src.book.matcher.match
     res = reader.read(Image.open(path).convert("RGB"))
     if res.error:
         print("BŁĄD:", res.error)
@@ -29,7 +32,7 @@ def test_image(path: str) -> int:
         return 1
     print(f"Obszar listy: {res.layout}")
     print(f"Widać koniec listy: {'tak' if res.reached_end else 'nie'}\n")
-    src = package_source(cfg)
+    print("Odczyt OCR:", reader.last_strip_lines)
     print(src.status)
     book = src.book if src.ok else None
     codes = set()

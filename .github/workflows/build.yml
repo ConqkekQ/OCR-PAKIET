@@ -80,6 +80,9 @@ jobs:
             $t = ($text -replace "%", "%25") -replace "`r?`n", "%0A"
             Write-Host "::notice title=$title::$t"
           }
+          # pakiety testowe z kodami towarów widocznych na zrzutach (sprawdza też ponowny odczyt wiersza)
+          $pk = (Resolve-Path tests\dane\pakiety_test.xlsx).Path.Replace('\','\\')
+          "{`"plik_pakietow`": `"$pk`"}" | Set-Content dist\config.json -Encoding utf8
           foreach ($f in Get-ChildItem tests\zrzuty\*.png) {
             Remove-Item wynik.txt -ErrorAction SilentlyContinue
             Start-Process -FilePath dist\OCR-PAKIET.exe -ArgumentList "--obraz",$f.FullName,"--wynik","wynik.txt" -Wait

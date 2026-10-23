@@ -83,6 +83,8 @@ class Worker(threading.Thread):
             self.out.put(("fatal", str(e)))
             return
         self._announce(engine, src)
+        self._book = src.book
+        reader.code_fixer = lambda c: self._book.matcher.match(c) if self._book else None
 
         while True:
             try:
@@ -100,6 +102,9 @@ class Worker(threading.Thread):
                     if self.state.rows:
                         self._publish(src.book)
                 book = src.book
+                if book is not self._book:
+                    self._book = book
+                    reader._retry_cache.clear()
                 if self.reset_request.is_set():
                     self.reset_request.clear()
                     self.state.reset(self.state.key)

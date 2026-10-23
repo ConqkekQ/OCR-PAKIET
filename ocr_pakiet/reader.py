@@ -93,6 +93,9 @@ class GridReader:
         self.layout: GridLayout | None = None
         self.last_header_lines: list[str] = []
         self.last_strip_lines: list[str] = []
+        # funkcja kod_z_OCR -> prawdziwy kod albo None; ustawiana przez program (dopasowanie do bazy)
+        self.code_fixer = None
+        self._retry_cache: dict[str, str | None] = {}
         self._debug_dir = None
         if cfg.debug_zapis_obrazow:
             from .config import app_dir
@@ -140,7 +143,7 @@ class GridReader:
         else:
             codes = [w for w in words if y0 <= w.y <= y1 and abs(w.x - t.x) < 12 * scale]
             right = max((w.x + w.w for w in codes), default=t.x + 110 * scale)
-            x1 = right + 4 * scale
+            x1 = right + 10 * scale  # zapas, żeby nie uciąć ostatniego znaku kodu
         lay = GridLayout(
             x0=max(0, int(x0 * inv)),
             x1=int(x1 * inv),
@@ -213,6 +216,12 @@ class GridReader:
         res.layout = lay
         if len(rows) >= 2:
             res.row_height = max(8.0, float(np.median(np.diff([r.y for r in rows]))))
+        if self.code_fixer:
+            for r in rows:
+                if not self.code_fixer(r.code):
+                    fixed = self._reread_row(img, lay, r, res.row_height)
+                    if fixed:
+                        r.code = fixed
         if rows:
             space_below = lay.y1 - rows[-1].y
             res.reached_end = space_below > 2.5 * res.row_height
@@ -220,6 +229,34 @@ class GridReader:
             # pusta siatka albo nieczytelna – zgubiony układ? przy następnym odczycie szukamy od nowa
             self.layout = None
         return res
+
+
+    RETRY_SCALES = (2.0, 4.0, 5.0, 2.5)
+
+    def _reread_row(self, img: Image.Image, lay: GridLayout, row: Row, row_h: float) -> str | None:
+        """Kod nie pasuje do żadnego towaru – czytamy sam ten wiersz w innych powiększeniach
+        i bierzemy pierwszy wynik, który pasuje do bazy."""
+        if row.code in self._retry_cache:
+            return self._retry_cache[row.code]
+        half = row_h * 0.62
+        crop = img.crop((lay.x0, int(max(0, row.y - half)), lay.x1, int(min(img.height, row.y + half))))
+        found = None
+        mid = crop.height / 2
+        for sc in self.RETRY_SCALES:
+            lines = self.engine.read(self._prepare(crop, sc))
+            # najpierw linia najbliżej środka wycinka (to nasz wiersz, nie fragment sąsiedniego)
+            lines.sort(key=lambda ln: abs(sum(w.cy for w in ln) / len(ln) / sc - mid))
+            for words in lines[:1]:
+                parsed = parse_line(words)
+                cand = parsed[1] if parsed else re.sub(r"[^A-Z0-9]", "", "".join(w.text for w in words).upper())
+                hit = self.code_fixer(cand) if cand else None
+                if hit:
+                    found = hit
+                    break
+            if found:
+                break
+        self._retry_cache[row.code] = found
+        return found
 
 
 def _fix_lp_sequence(rows: list[Row]) -> list[Row]:
