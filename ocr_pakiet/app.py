@@ -252,6 +252,7 @@ class App:
         sb.pack(side="right", fill="y")
         self.canvas.pack(side="left", fill="both", expand=True)
         self.cards = tk.Frame(self.canvas, bg=BG)
+        self._cards_sig = None  # co aktualnie widać na kartach
         self._cards_win = self.canvas.create_window((0, 0), window=self.cards, anchor="nw")
         self.cards.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         self.canvas.bind("<Configure>", self._on_canvas_resize)
@@ -457,19 +458,44 @@ class App:
 
         sugg = sorted(sugg, key=first_lp)  # kolejność jak pozycje w ZS
         self.root.title(f"Pakiety – podpowiedzi ({len(sugg)})" if sugg else "Pakiety – podpowiedzi")
-        self._clear_cards()
-        if not sugg:
-            self._render_message("Brak promocji dla towarów w tym zamówieniu.")
+        plan = []
         for s in sugg:
             lp = first_lp(s)
             is_new = any(self.new_until.get(i.code, 0) > now for i in s.present)
-            self._card(s, None if lp == 10**9 else lp, is_new, d["names"])
+            plan.append((s, None if lp == 10**9 else lp, is_new))
+        # podpis tego, co widać na kartach – gdy się nie zmienił, nie przebudowujemy okienka (bez mrugania)
+        sig = tuple((s.package.name, s.package.note, lp, is_new, tuple(i.code for i in s.missing))
+                    for s, lp, is_new in plan)
+        if sig != self._cards_sig:
+            self._cards_sig = sig
+            self._swap_cards(lambda: self._fill_cards(plan, d["names"]))
         if any(t > now for t in self.new_until.values()):
             if self._unhighlight_job:
                 self.root.after_cancel(self._unhighlight_job)
             delay = int((min(t for t in self.new_until.values() if t > now) - now) * 1000) + 50
             self._unhighlight_job = self.root.after(delay, self._rerender_last)
         self.lbl_foot.configure(text=f"Odświeżono {time.strftime('%H:%M:%S')} · kliknij kod, aby go skopiować")
+
+    def _fill_cards(self, plan, names):
+        if not plan:
+            self._render_message("Brak promocji dla towarów w tym zamówieniu.")
+        for s, lp, is_new in plan:
+            self._card(s, lp, is_new, names)
+
+    def _swap_cards(self, build):
+        """Nowe karty budujemy w osobnej ramce i podmieniamy całość naraz – bez mrugania."""
+        old = self.cards
+        new = tk.Frame(self.canvas, bg=BG)
+        self.cards = new
+        build()
+        new.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        new.update_idletasks()
+        cw = self.canvas.winfo_width()
+        if cw > 1:
+            self.canvas.itemconfigure(self._cards_win, window=new, width=cw)
+        else:
+            self.canvas.itemconfigure(self._cards_win, window=new)
+        old.destroy()
 
     def _rerender_last(self):
         self._unhighlight_job = None
@@ -560,6 +586,8 @@ def demo_screenshot(path: str) -> int:
     app.root.geometry(f"{int(400 * app.k)}x{int(820 * app.k)}+20+20")
     app.root.update()
     app.render(data)
+    app.root.update()
+    app.render(dict(data, new_codes=set()))  # ten sam stan – karty nie powinny się przebudować
     app.root.update()
     app.root.after(600, lambda: None)
     for _ in range(10):
