@@ -95,7 +95,10 @@ class GridReader:
         self.last_strip_lines: list[str] = []
         # funkcja kod_z_OCR -> prawdziwy kod albo None; ustawiana przez program (dopasowanie do bazy)
         self.code_fixer = None
-        self._retry_cache: dict[str, str | None] = {}
+        # wynik ponownego odczytu wiersza: kod surowy -> (kod z bazy albo None, czas, liczba prób)
+        self._retry_cache: dict[str, tuple[str | None, float, int]] = {}
+        self.pending_retry = False  # są kody, które warto spróbować odczytać jeszcze raz
+        self.last_retries: list[str] = []  # do diagnozy
         self._debug_dir = None
         if cfg.debug_zapis_obrazow:
             from .config import app_dir
@@ -216,6 +219,8 @@ class GridReader:
         res.layout = lay
         if len(rows) >= 2:
             res.row_height = max(8.0, float(np.median(np.diff([r.y for r in rows]))))
+        self.last_retries = []
+        self.pending_retry = False
         if self.code_fixer:
             for r in rows:
                 if not self.code_fixer(r.code):
@@ -231,31 +236,59 @@ class GridReader:
         return res
 
 
-    RETRY_SCALES = (2.0, 4.0, 5.0, 2.5)
+    RETRY_SCALES = (2.0, 4.0, 5.0, 2.5, 3.0)
+    RETRY_FAILED_AFTER_S = 4.0  # nieudany odczyt powtarzamy (np. wiersz był w trakcie edycji)
+    RETRY_MAX = 3               # ... ale najwyżej kilka razy (towar spoza listy nigdy nie pasuje)
+
+    @staticmethod
+    def _plain(crop: Image.Image, scale: float) -> Image.Image:
+        """Wariant bez usuwania linii i progowania – czasem czytelniejszy dla OCR."""
+        g = crop.convert("L")
+        arr = np.asarray(g)
+        if arr.size and float(np.median(arr)) < 128:  # ciemne tło (zaznaczenie) -> odwracamy
+            g = Image.fromarray(255 - arr, "L")
+        return g.resize((int(g.width * scale), int(g.height * scale)), Image.BICUBIC)
 
     def _reread_row(self, img: Image.Image, lay: GridLayout, row: Row, row_h: float) -> str | None:
         """Kod nie pasuje do żadnego towaru – czytamy sam ten wiersz w innych powiększeniach
-        i bierzemy pierwszy wynik, który pasuje do bazy."""
-        if row.code in self._retry_cache:
-            return self._retry_cache[row.code]
+        i wariantach obrazu, i bierzemy pierwszy wynik, który pasuje do bazy."""
+        now = time.monotonic()
+        cached = self._retry_cache.get(row.code)
+        if cached:
+            found, when, n = cached
+            if found or n >= self.RETRY_MAX:
+                return found
+            if now - when < self.RETRY_FAILED_AFTER_S:
+                self.pending_retry = True
+                return None
+        n = cached[2] if cached else 0
         half = row_h * 0.62
         crop = img.crop((lay.x0, int(max(0, row.y - half)), lay.x1, int(min(img.height, row.y + half))))
         found = None
         mid = crop.height / 2
-        for sc in self.RETRY_SCALES:
-            lines = self.engine.read(self._prepare(crop, sc))
+        tried = []
+        variants = [(self._prepare, sc) for sc in self.RETRY_SCALES] + [(self._plain, 3.0), (self._plain, 2.0)]
+        for prep, sc in variants:
+            lines = self.engine.read(prep(crop, sc))
             # najpierw linia najbliżej środka wycinka (to nasz wiersz, nie fragment sąsiedniego)
             lines.sort(key=lambda ln: abs(sum(w.cy for w in ln) / len(ln) / sc - mid))
             for words in lines[:1]:
                 parsed = parse_line(words)
                 cand = parsed[1] if parsed else re.sub(r"[^A-Z0-9]", "", "".join(w.text for w in words).upper())
+                tried.append(cand)
                 hit = self.code_fixer(cand) if cand else None
+                if not hit and not parsed and len(cand) > 6:
+                    # numer Lp. sklejony z kodem: odcinamy cyfry z przodu
+                    hit = self.code_fixer(re.sub(r"^\d{1,5}", "", cand))
                 if hit:
                     found = hit
                     break
             if found:
                 break
-        self._retry_cache[row.code] = found
+        self._retry_cache[row.code] = (found, now, n + 1)
+        if not found and n + 1 < self.RETRY_MAX:
+            self.pending_retry = True
+        self.last_retries.append(f"Lp {row.lp}: {row.code} -> próby {tried} -> {found or 'BRAK'}")
         return found
 
 

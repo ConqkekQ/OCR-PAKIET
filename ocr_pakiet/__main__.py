@@ -54,7 +54,7 @@ def check_live_window(save_dir: str | None = None) -> int:
     import time
 
     from . import winutil
-    from .config import Config
+    from .config import Config, package_source
     from .ocr_engine import create_engine
     from .reader import GridReader
 
@@ -73,6 +73,12 @@ def check_live_window(save_dir: str | None = None) -> int:
     engine = create_engine(cfg.ocr_silnik, cfg.ocr_jezyki, cfg.tesseract_sciezka)
     print(f"Silnik OCR: {engine.name}")
     reader = GridReader(engine, cfg)
+    src = package_source(cfg)
+    print(src.status)
+    book = src.book if src.ok else None
+    if book:
+        print(f"Pakietów: {len(book.packages)}, znanych kodów: {len(book.matcher.known)}")
+        reader.code_fixer = book.matcher.match
     res = reader.read(img)
     if save_dir and img is not None:
         import os
@@ -89,9 +95,14 @@ def check_live_window(save_dir: str | None = None) -> int:
             print("  ", ln)
         return 1
     print(f"Obszar listy: {res.layout}")
+    print(f"Widać koniec listy: {'tak' if res.reached_end else 'nie'}")
     print(f"Odczytane linie OCR: {reader.last_strip_lines}")
+    for ln in reader.last_retries:
+        print("Ponowny odczyt:", ln)
     for r in res.rows:
-        print(f"  Lp {r.lp:>4}  {r.code}")
+        m = book.matcher.match(r.code) if book else None
+        pk = ", ".join(p.name for p in book.by_code.get(m, [])) if (book and m) else ""
+        print(f"  Lp {r.lp:>4}  {r.code:<18} -> {m or 'NIE ROZPOZNANO'}  {('pakiet: ' + pk) if pk else ''}")
     return 0
 
 

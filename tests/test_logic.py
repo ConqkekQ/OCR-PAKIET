@@ -151,3 +151,33 @@ def test_matcher_first_letter_and_neighbours():
     assert m.match("LBPVITCIO") == "LBPVITC10"  # I/O zamiast 1/0
     assert m.match("LBPVITC30") is None          # inna cyfra = inny towar, nie zgadujemy
     assert m.match("L003178") is None
+
+
+def test_reread_retries_after_failure(monkeypatch):
+    from PIL import Image
+
+    from ocr_pakiet import reader as rd
+    from ocr_pakiet.config import Config
+    from ocr_pakiet.reader import GridLayout, GridReader
+
+    class Engine:
+        max_dim = 4000
+        good = False
+
+        def read(self, img):
+            txt = "00006 LBPVITC10" if self.good else "00006 XXXXXXX"
+            return [[Word(t, i * 50, img.height // 2 - 5, 40, 10) for i, t in enumerate(txt.split())]]
+
+    eng = Engine()
+    r = GridReader(eng, Config())
+    r.code_fixer = CodeMatcher({"LBPVITC10"}, set()).match
+    img = Image.new("RGB", (200, 100), "white")
+    lay = GridLayout(x0=0, x1=200, y0=0, y1=100, win_size=img.size)
+    row = Row(6, "LBPVFFCIO", 50)
+    clock = [100.0]
+    monkeypatch.setattr(rd.time, "monotonic", lambda: clock[0])
+    assert r._reread_row(img, lay, row, 18) is None and r.pending_retry
+    eng.good = True
+    assert r._reread_row(img, lay, row, 18) is None          # za wcześnie na kolejną próbę
+    clock[0] += 5
+    assert r._reread_row(img, lay, row, 18) == "LBPVITC10"   # druga próba się udała

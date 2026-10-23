@@ -154,6 +154,8 @@ class Worker(threading.Thread):
         if res.error:
             self.out.put(("warn", res.error))
             return
+        if reader.pending_retry:
+            self._last_hash = None  # kod nie pasował – za chwilę czytamy ten sam ekran jeszcze raz
         self.state.apply(res, title)
         self._publish(book)
 
