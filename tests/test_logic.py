@@ -142,3 +142,12 @@ def test_new_item_only_below_known_end():
     assert long.new_lps == set()                    # przewinięcie – stare pozycje, koniec nieznany wcześniej
     long.apply(ReadResult(rows=rows(20, 41), reached_end=True), t)
     assert long.new_lps == {41}
+
+
+def test_matcher_first_letter_and_neighbours():
+    m = CodeMatcher({"L003176", "L003177", "LBPVITC10", "LBPVITC50"}, set())
+    assert m.match("1003176") == "L003176"      # L odczytane jako 1 (zaznaczony wiersz)
+    assert m.match("I003176") == "L003176"
+    assert m.match("LBPVITCIO") == "LBPVITC10"  # I/O zamiast 1/0
+    assert m.match("LBPVITC30") is None          # inna cyfra = inny towar, nie zgadujemy
+    assert m.match("L003178") is None

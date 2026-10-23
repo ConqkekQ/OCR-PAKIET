@@ -210,19 +210,22 @@ class CodeMatcher:
         hits = self.by_canon.get(cc, [])
         if len(hits) == 1:
             return hits[0]
+        # pierwsza litera „L” odczytana jako „1”/„I”/„|” (częste w zaznaczonym wierszu), np. 1003176 -> L003176
+        if cc[:1] == "1":
+            hits = self.by_canon.get("L" + cc[1:], [])
+            if len(hits) == 1:
+                return hits[0]
         if len(cc) < 6:
             return None
-        scored = []
+        # jeden błąd OCR: przyjmujemy, gdy jest dokładnie JEDEN wiarygodny kandydat o 1 znak różny
+        # (zamiana cyfry na inną cyfrę to zwykle inny towar – takich nie poprawiamy)
+        cands = []
         for kc, originals in self.by_canon.items():
-            d = levenshtein(cc, kc, 2)
-            if d <= 2:
-                scored.append((d, originals))
-        best = [s for s in scored if s[0] == 1]
-        if len(best) == 1 and len(best[0][1]) == 1 and len(scored) == 1:
-            target = best[0][1][0]
-            if _plausible_ocr_slip(cc, canon(target)):
-                return target
-        return None
+            if levenshtein(cc, kc, 1) == 1 and _plausible_ocr_slip(cc, kc):
+                cands.extend(originals)
+                if len(cands) > 1:
+                    return None
+        return cands[0] if cands else None
 
 
 def _plausible_ocr_slip(a: str, b: str) -> bool:
