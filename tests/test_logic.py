@@ -102,3 +102,43 @@ def test_package_source_bad_file(tmp_path):
     src = PackageSource(str(p), str(tmp_path / "kopia.xlsx"))
     src.refresh(force=True)
     assert not src.ok and "Błąd" in src.status
+
+
+def test_promo_badges():
+    from ocr_pakiet.promo import GRATIS, INFO, MIX, RABAT, parse
+
+    cases = {
+        "7+1": ("7+1", GRATIS, False),
+        "12 szt.: -25%": ("-25% od 12 szt.", RABAT, False),
+        "1 szt.: -10% (do 27.11.2026)": ("-10% od 1 szt.", RABAT, False),
+        "10 op.: -10% / 25 op.: -15%": ("-10% od 10 op.", RABAT, True),
+        "MIX Dechra: 1500 zł netto: -7% / 3000 zł netto: -10%": ("MIX -7% od 1500 zł", MIX, True),
+        "5+1 lub MIX Dechra: 1500 zł netto: -7%": ("5+1", GRATIS, True),
+        "Zylkene 100 kaps. (75 / 225 / 450 mg): 2 szt.: -30%": ("-30% od 2 szt.", RABAT, True),
+        "29 szt.: +1 szt. za 1 zł": ("29+1 za 1 zł", GRATIS, True),
+        "48 szt.: 21 zł/szt. / 96 szt.: 19 zł/szt.": ("21 zł/szt. od 48 szt.", RABAT, True),
+        "Pakiet uśredniony – indywidualne warunki u przedstawiciela": ("warunki indyw.", INFO, True),
+    }
+    for note, (badge, kind, detail) in cases.items():
+        p = parse(note)
+        assert (p.badge, p.kind, p.show_detail) == (badge, kind, detail), note
+    assert parse("1 szt.: -10% (do 27.11.2026)").deadline == "27.11"
+
+
+def test_new_item_only_below_known_end():
+    t = "Zamówienie sprzedaży [ZS-9/26] - edycja"
+    st = OrderState()
+    rows = lambda a, b: [Row(i, f"K{i}", i * 18) for i in range(a, b + 1)]
+    st.apply(ReadResult(rows=rows(1, 5), reached_end=True), t)
+    assert st.new_lps == set()                      # pierwszy odczyt – nic nie jest „nowe”
+    st.apply(ReadResult(rows=rows(1, 6), reached_end=True), t)
+    assert st.new_lps == {6}                        # dodano pozycję pod końcem listy
+    st.apply(ReadResult(rows=rows(1, 6), reached_end=True), t)
+    assert st.new_lps == set()                      # ten sam stan – już nie nowa
+
+    long = OrderState()
+    long.apply(ReadResult(rows=rows(1, 20), reached_end=False), t)
+    long.apply(ReadResult(rows=rows(15, 40), reached_end=True), t)
+    assert long.new_lps == set()                    # przewinięcie – stare pozycje, koniec nieznany wcześniej
+    long.apply(ReadResult(rows=rows(20, 41), reached_end=True), t)
+    assert long.new_lps == {41}

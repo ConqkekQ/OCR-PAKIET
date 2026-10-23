@@ -24,20 +24,31 @@ class OrderState:
     key: str = ""
     rows: dict[int, str] = field(default_factory=dict)  # Lp -> kod z OCR
     complete: bool = False  # cała lista została przejrzana (od 1 do końca)
+    end_lp: int | None = None  # ostatnie Lp., gdy widać było koniec listy
+    new_lps: set = field(default_factory=set)  # pozycje dodane przed chwilą (pod znanym końcem listy)
 
     def reset(self, key: str = "") -> None:
         self.key = key
         self.rows = {}
         self.complete = False
+        self.end_lp = None
+        self.new_lps = set()
 
     def apply(self, res: ReadResult, title: str) -> None:
         key = order_key(title)
         if key != self.key:
             self.reset(key)
+        self.new_lps = set()
         if not res.rows:
             return
         visible = {r.lp: r.code for r in res.rows}
         lo, hi = min(visible), max(visible)
+        # „nowa” = pozycja pod końcem listy, który widzieliśmy wcześniej (towar właśnie dodany);
+        # nie przy pierwszym odczycie ani przy przewijaniu nieznanej części listy
+        if self.end_lp is not None:
+            self.new_lps = {lp for lp in visible if lp > self.end_lp and lp not in self.rows}
+        if res.reached_end:
+            self.end_lp = hi
         whole_list_visible = lo == 1 and res.reached_end
         if whole_list_visible:
             # cała lista na jednym ekranie – to jest pełny, aktualny obraz zamówienia
@@ -56,6 +67,8 @@ class OrderState:
     def replace(self, rows: dict[int, str], key: str) -> None:
         self.key = key
         self.rows = dict(rows)
+        self.new_lps = set()
+        self.end_lp = max(rows) if rows else None
         self.complete = bool(rows) and not self.missing_lps() and 1 in rows
 
     def missing_lps(self) -> list[int]:

@@ -18,6 +18,7 @@ class Package:
     name: str
     items: list[Item] = field(default_factory=list)
     note: str = ""
+    producer: str = ""
 
     @property
     def codes(self) -> list[str]:
@@ -84,6 +85,7 @@ class PackageBook:
             raise ValueError("Arkusz z pakietami jest pusty")
         cols = _find_cols(list(rows[0]), {
             "pakiet": ("pakiet",), "kod": ("kod",), "nazwa": ("nazwa",), "uwagi": ("uwag", "opis", "warun"),
+            "producent": ("produc",),
         })
         if "pakiet" not in cols or "kod" not in cols:
             raise ValueError('W pierwszym wierszu arkusza muszą być kolumny "Pakiet" i "Kod towaru"')
@@ -108,6 +110,9 @@ class PackageBook:
             note = str(cell("uwagi") or "").strip()
             if note and not p.note:
                 p.note = note
+            prod = str(cell("producent") or "").strip()
+            if prod and not p.producer:
+                p.producer = prod
 
         universe = set()
         if "Towary" in wb.sheetnames:

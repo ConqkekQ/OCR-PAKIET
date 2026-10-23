@@ -15,6 +15,7 @@ from .config import DOMYSLNY_PLIK_PAKIETOW, Config, package_source, resource
 from .ocr_engine import create_engine
 from .order_state import OrderState, order_key
 from .packages import PackageBook
+from .promo import GRATIS, INFO, MIX, RABAT, parse
 from .reader import GridReader
 
 BG = "#f7f7f5"
@@ -24,8 +25,17 @@ OK = "#1a7f37"
 TODO = "#b35900"
 ACCENT = "#0b5cad"
 WARN = "#a40e26"
-NOTE_BG = "#ffe9a8"
-NOTE_FG = "#4a3200"
+NEW_RING = "#ffd54a"
+NEW_TAG = "#8a5300"
+CARD_BORDER = "#d8dbe0"
+# typ promocji -> (tło karty, kolor paska i plakietki)
+PROMO_STYLE = {
+    GRATIS: ("#f1faf3", "#1a7f37"),
+    RABAT: ("#f0f6fd", "#0b5cad"),
+    MIX: ("#f6f1fc", "#6e3fb0"),
+    INFO: ("#f4f5f7", "#6b7078"),
+}
+HIGHLIGHT_S = 3.0  # jak długo świeci nowa promocja
 
 
 class Worker(threading.Thread):
@@ -162,7 +172,13 @@ class Worker(threading.Thread):
             if m:
                 matched[lp] = m
         suggestions = book.suggest(set(matched.values()))
+        lp_of: dict[str, int] = {}
+        for lp, code in sorted(matched.items()):
+            lp_of.setdefault(code, lp)
+        new_codes = {matched[lp] for lp in self.state.new_lps if lp in matched}
         self.out.put(("result", {
+            "lp_of": lp_of,
+            "new_codes": new_codes,
             "key": self.state.key,
             "count": len(self.state.rows),
             "max_lp": max(self.state.rows) if self.state.rows else 0,
@@ -222,30 +238,25 @@ class App:
                   **btn).pack(side="right", padx=4)
 
         body = tk.Frame(root, bg=BG)
-        body.pack(fill="both", expand=True, padx=10, pady=(4, 4))
-        self.txt = tk.Text(body, bg="white", fg=FG, font=("Segoe UI", 10), relief="flat", wrap="word",
-                           padx=10, pady=8, cursor="arrow", highlightthickness=1,
-                           highlightbackground="#d8dbe0")
-        sb = tk.Scrollbar(body, command=self.txt.yview)
-        self.txt.configure(yscrollcommand=sb.set)
+        body.pack(fill="both", expand=True, padx=(10, 4), pady=(4, 4))
+        self.canvas = tk.Canvas(body, bg=BG, highlightthickness=0, bd=0)
+        sb = tk.Scrollbar(body, command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
-        self.txt.pack(side="left", fill="both", expand=True)
-        t = self.txt
-        t.tag_configure("pk", font=("Segoe UI", 10, "bold"), spacing1=8)
-        t.tag_configure("pk_done", font=("Segoe UI", 10, "bold"), foreground=OK, spacing1=8)
-        t.tag_configure("ok", foreground=OK)
-        t.tag_configure("todo", foreground=TODO, font=("Segoe UI", 10, "bold"))
-        t.tag_configure("code", foreground=ACCENT, underline=True)
-        t.tag_configure("muted", foreground=MUTED, font=("Segoe UI", 9))
-        t.tag_configure("note", background=NOTE_BG, foreground=NOTE_FG, font=("Segoe UI", 10, "bold"),
-                        lmargin1=6, lmargin2=6, rmargin=6, spacing1=3, spacing3=3)
-        t.tag_bind("code", "<Enter>", lambda e: t.configure(cursor="hand2"))
-        t.tag_bind("code", "<Leave>", lambda e: t.configure(cursor="arrow"))
-        t.tag_bind("code", "<Button-1>", self.copy_code)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.cards = tk.Frame(self.canvas, bg=BG)
+        self._cards_win = self.canvas.create_window((0, 0), window=self.cards, anchor="nw")
+        self.cards.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>", self._on_canvas_resize)
+        self.canvas.bind_all("<MouseWheel>", self._on_wheel)
+        self.k = k
+        self.last_data: dict | None = None
+        self.new_until: dict[str, float] = {}  # kod -> do kiedy podświetlać
+        self._unhighlight_job = None
 
         self.lbl_foot = tk.Label(root, text="", bg=BG, fg=MUTED, font=("Segoe UI", 8), anchor="w")
         self.lbl_foot.pack(fill="x", padx=10, pady=(0, 6))
-        self._render_text("Szukam okna zamówienia…", "muted")
+        self._render_message("Szukam okna zamówienia…")
 
     # ---------- akcje ----------
     def toggle_pause(self):
@@ -312,24 +323,98 @@ class App:
                  font=("Segoe UI", 8), justify="left", anchor="w").pack(fill="x", padx=12, pady=(6, 10))
         entry.focus_set()
 
-    def copy_code(self, event):
-        idx = self.txt.index(f"@{event.x},{event.y}")
-        rng = self.txt.tag_prevrange("code", f"{idx}+1c")
-        if not rng:
-            return
-        code = self.txt.get(*rng).strip()
+    def copy_code(self, code: str):
         self.root.clipboard_clear()
         self.root.clipboard_append(code)
         self.lbl_foot.configure(text=f"Skopiowano kod: {code}")
 
     # ---------- rysowanie ----------
-    def _render_text(self, msg: str, tag: str = ""):
-        self.txt.configure(state="normal")
-        self.txt.delete("1.0", "end")
-        self.txt.insert("end", msg, tag)
-        self.txt.configure(state="disabled")
+    def _on_canvas_resize(self, event):
+        self.canvas.itemconfigure(self._cards_win, width=event.width)
+        if self.last_data:
+            wrap = max(150, event.width - int(40 * self.k))
+            for w in self.cards.winfo_children():
+                for lbl in getattr(w, "_wrap_labels", []):
+                    lbl.configure(wraplength=wrap)
+
+    def _on_wheel(self, event):
+        if self.canvas.winfo_height() < self.cards.winfo_height():
+            self.canvas.yview_scroll(int(-event.delta / 120), "units")
+
+    def _clear_cards(self):
+        for w in self.cards.winfo_children():
+            w.destroy()
+
+    def _render_message(self, msg: str):
+        self._clear_cards()
+        tk.Label(self.cards, text=msg, bg=BG, fg=MUTED, font=("Segoe UI", 10), anchor="w",
+                 justify="left").pack(fill="x", padx=4, pady=8)
+
+    def _card(self, s, lp: int | None, is_new: bool, names: dict):
+        p = s.package
+        promo = parse(p.note)
+        card_bg, accent = PROMO_STYLE[promo.kind]
+        wrap = max(150, self.canvas.winfo_width() - int(40 * self.k))
+
+        ring = tk.Frame(self.cards, bg=NEW_RING if is_new else BG, padx=3 if is_new else 0,
+                        pady=3 if is_new else 0)
+        ring.pack(fill="x", pady=(0, 8), padx=(0, 2))
+        card = tk.Frame(ring, bg=card_bg, highlightthickness=1, highlightbackground=CARD_BORDER)
+        card.pack(fill="x", padx=0 if is_new else 3, pady=0)
+        tk.Frame(card, bg=accent, width=int(5 * self.k)).pack(side="left", fill="y")
+        inner = tk.Frame(card, bg=card_bg)
+        inner.pack(side="left", fill="both", expand=True, padx=(10, 8), pady=8)
+
+        head = tk.Frame(inner, bg=card_bg)
+        head.pack(fill="x")
+        tk.Label(head, text=f" {promo.badge} ", bg=accent, fg="white", font=("Segoe UI", 12, "bold"),
+                 padx=6, pady=1).pack(side="left")
+        if is_new:
+            tk.Label(head, text=" NOWA ", bg=NEW_TAG, fg="white", font=("Segoe UI", 8, "bold")).pack(
+                side="right", anchor="n")
+        title = p.name[7:] if p.name.lower().startswith("pakiet ") else p.name
+        name_lbl = tk.Label(inner, text=title, bg=card_bg, fg=FG, font=("Segoe UI", 10, "bold"),
+                            anchor="w", justify="left", wraplength=wrap)
+        name_lbl.pack(fill="x", pady=(6, 0))
+
+        meta = tk.Frame(inner, bg=card_bg)
+        meta.pack(fill="x", pady=(2, 0))
+        if lp is not None:
+            tk.Label(meta, text=f"Lp. {lp}  ·", bg=card_bg, fg=MUTED, font=("Segoe UI", 8)).pack(side="left")
+        codes = [it.code for it in p.items]
+        for i, code in enumerate(codes[:3]):
+            c = tk.Label(meta, text=code, bg=card_bg, fg=ACCENT, font=("Segoe UI", 8, "underline"),
+                         cursor="hand2")
+            c.pack(side="left", padx=(4, 0))
+            c.bind("<Button-1>", lambda e, code=code: self.copy_code(code))
+        if p.producer:
+            tk.Label(meta, text=f"·  {p.producer}", bg=card_bg, fg=MUTED, font=("Segoe UI", 8)).pack(
+                side="left", padx=(4, 0))
+        if promo.deadline:
+            tk.Label(meta, text=f"⏰ do {promo.deadline}", bg=card_bg, fg=WARN,
+                     font=("Segoe UI", 8, "bold")).pack(side="right")
+
+        wraps = [name_lbl]
+        if promo.show_detail:
+            d = tk.Label(inner, text=p.note, bg=card_bg, fg="#3a3f46", font=("Segoe UI", 9), anchor="w",
+                         justify="left", wraplength=wrap)
+            d.pack(fill="x", pady=(4, 0))
+            wraps.append(d)
+        if len(p.items) > 1:  # pakiet z kilku towarów – co jest, czego brakuje
+            for it in p.items:
+                nm = it.name or names.get(it.code, "")
+                have = it not in s.missing
+                txt = f"{'✔ jest ' if have else '➕ dodaj'}  {it.code}  {nm}"
+                lbl = tk.Label(inner, text=txt, bg=card_bg, fg=OK if have else TODO,
+                               font=("Segoe UI", 9, "normal" if have else "bold"), anchor="w",
+                               justify="left", wraplength=wrap, cursor="hand2")
+                lbl.pack(fill="x")
+                lbl.bind("<Button-1>", lambda e, code=it.code: self.copy_code(code))
+                wraps.append(lbl)
+        ring._wrap_labels = wraps
 
     def render(self, d: dict):
+        self.last_data = d
         self.lbl_order.configure(text=d["key"] or "Zamówienie")
         info = f"Odczytane pozycje: {d['count']}"
         if d["max_lp"]:
@@ -349,32 +434,40 @@ class App:
             self.lbl_info.configure(fg=WARN)
         self.lbl_info.configure(text=info)
 
-        t = self.txt
-        t.configure(state="normal")
-        t.delete("1.0", "end")
+        now = time.monotonic()
+        for code in d.get("new_codes", ()):
+            self.new_until[code] = now + HIGHLIGHT_S
+        self.new_until = {c: t for c, t in self.new_until.items() if t > now}
+
         sugg = d["suggestions"]
-        names = d["names"]
+        lp_of = d.get("lp_of", {})
+
+        def first_lp(s):
+            lps = [lp_of[i.code] for i in s.present if i.code in lp_of]
+            return min(lps) if lps else 10**9
+
+        sugg = sorted(sugg, key=first_lp)  # kolejność jak pozycje w ZS
+        self.root.title(f"Pakiety – podpowiedzi ({len(sugg)})" if sugg else "Pakiety – podpowiedzi")
+        self._clear_cards()
         if not sugg:
-            t.insert("end", "Brak pakietów dla towarów w tym zamówieniu.", "muted")
+            self._render_message("Brak promocji dla towarów w tym zamówieniu.")
         for s in sugg:
-            p = s.package
-            if s.complete:
-                t.insert("end", f"✅ {p.name}\n", "pk_done")
-            else:
-                t.insert("end", f"📦 {p.name}  ({len(s.present)}/{len(p.items)})\n", "pk")
-            if p.note:
-                t.insert("end", f" ℹ  {p.note}\n", "note")
-            for it in p.items:
-                nm = it.name or names.get(it.code, "")
-                if it in s.missing:
-                    t.insert("end", "  ➕ dodaj ", "todo")
-                    t.insert("end", it.code, "code")
-                else:
-                    t.insert("end", "  ✔ jest  ", "ok")
-                    t.insert("end", it.code, "ok")
-                t.insert("end", f"  {nm}\n" if nm else "\n", "muted")
-        t.configure(state="disabled")
+            lp = first_lp(s)
+            is_new = any(self.new_until.get(i.code, 0) > now for i in s.present)
+            self._card(s, None if lp == 10**9 else lp, is_new, d["names"])
+        if any(t > now for t in self.new_until.values()):
+            if self._unhighlight_job:
+                self.root.after_cancel(self._unhighlight_job)
+            delay = int((min(t for t in self.new_until.values() if t > now) - now) * 1000) + 50
+            self._unhighlight_job = self.root.after(delay, self._rerender_last)
         self.lbl_foot.configure(text=f"Odświeżono {time.strftime('%H:%M:%S')} · kliknij kod, aby go skopiować")
+
+    def _rerender_last(self):
+        self._unhighlight_job = None
+        if self.last_data:
+            d = dict(self.last_data)
+            d["new_codes"] = set()
+            self.render(d)
 
     def poll(self):
         try:
@@ -384,6 +477,7 @@ class App:
                     self.render(data)
                 elif kind == "idle":
                     self.lbl_order.configure(text="—")
+                    self.root.title("Pakiety – podpowiedzi")
                     self.lbl_info.configure(text=data, fg=MUTED)
                 elif kind == "pkg":
                     self.pkg_warn = data
@@ -428,3 +522,42 @@ def main():
         root.destroy()
         return
     App().run()
+
+
+def demo_screenshot(path: str) -> int:
+    """Rysuje okienko na przykładowych promocjach i zapisuje zrzut (test wyglądu, CI)."""
+    from PIL import ImageGrab
+
+    from .packages import Item, Package, Suggestion
+
+    app = App()
+    demo = [
+        (3, "Pakiet Qivitan 25 mg/ml 100 ml", "TST001", "Livisto", "7+1"),
+        (7, "Pakiet Forcyl 160 mg/ml 100ml", "TST002", "Vetoquinol", "12 szt.: -25%"),
+        (11, "Pakiet Cefabactin 500mg 10 tabl", "TST003", "Dechra",
+         "MIX Dechra: 1500 zł netto: -7% / 3000 zł netto: -10% / 6000 zł netto: -14%"),
+        (14, "Pakiet Apoquel 16 mg tabl. powlekane 20 tabl", "TST004", "Zoetis", "1 szt.: -10% (do 27.11.2026)"),
+        (18, "Pakiet Rapidexon 0.2% 100ml", "TST005", "Dechra",
+         "Pakiet uśredniony – indywidualne warunki u przedstawiciela"),
+        (21, "Pakiet Ubrolexin 10g tuba", "TST006", "Boehringer Ingelheim", "10 op.: -10% / 25 op.: -15%"),
+    ]
+    sugg, lp_of = [], {}
+    for lp, name, code, prod, note in demo:
+        it = Item(code)
+        sugg.append(Suggestion(Package(name, [it], note, prod), [it], []))
+        lp_of[code] = lp
+    data = {"key": "ZS-1/26/TEST", "count": 23, "max_lp": 23, "missing": [], "complete": True,
+            "suggestions": sugg, "names": {}, "lp_of": lp_of, "new_codes": {"TST006"}}
+    app.root.geometry(f"{int(400 * app.k)}x{int(820 * app.k)}+20+20")
+    app.root.update()
+    app.render(data)
+    app.root.update()
+    app.root.after(600, lambda: None)
+    for _ in range(10):
+        app.root.update()
+        time.sleep(0.05)
+    x, y = app.root.winfo_rootx(), app.root.winfo_rooty()
+    w, h = app.root.winfo_width(), app.root.winfo_height()
+    ImageGrab.grab(bbox=(x, y, x + w, y + h)).save(path)
+    app.root.destroy()
+    return 0

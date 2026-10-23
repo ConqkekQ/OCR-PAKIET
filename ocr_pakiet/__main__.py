@@ -119,7 +119,12 @@ def main() -> int:
                     help="po 5 s zapisz opis aktywnego okna (kliknij w tym czasie w XL)")
     ap.add_argument("--sprawdz-okno", action="store_true",
                     help="po 5 s znajdź aktywne ZS na ekranie, odczytaj je i zapisz wynik")
+    ap.add_argument("--podglad", help="zapisz zrzut okienka z przykładowymi promocjami (test wyglądu)")
     args = ap.parse_args()
+    if args.podglad:
+        from .app import demo_screenshot
+
+        return _redirect(args.wynik, lambda: demo_screenshot(args.podglad))
     if args.sprawdz_okno:
         import os
 

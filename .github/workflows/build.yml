@@ -114,6 +114,18 @@ jobs:
           if ($wyniki["lista"] -notmatch "NIE ZNALEZIONO") { Write-Host "::warning::ZS uznane za aktywne, choć aktywna była lista" }
           exit 0
 
+      - name: Podgląd okienka (zrzut)
+        shell: pwsh
+        run: |
+          Start-Process -FilePath dist\OCR-PAKIET.exe -ArgumentList "--podglad","podglad.png","--wynik","podglad.txt" -Wait
+          if (Test-Path podglad.txt) { Get-Content podglad.txt }
+          if (-not (Test-Path podglad.png)) { Write-Host "::error::Brak zrzutu podglądu"; exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: podglad-okienka
+          path: podglad.png
+
       - name: Instalator (Inno Setup)
         shell: pwsh
         run: |
