@@ -121,10 +121,20 @@ jobs:
           if (Test-Path podglad.txt) { Get-Content podglad.txt }
           if (-not (Test-Path podglad.png)) { Write-Host "::error::Brak zrzutu podglądu"; exit 1 }
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: podglad-okienka
-          path: podglad.png
+      - name: Podgląd na gałąź ci-podglad (do obejrzenia bez logowania do Actions)
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        run: |
+          $png = (Resolve-Path podglad.png).Path
+          $tmp = Join-Path $env:RUNNER_TEMP "podglad"
+          git clone --quiet --no-checkout "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" $tmp
+          Set-Location $tmp
+          git checkout --quiet --orphan ci-podglad
+          git rm -rf --quiet . 2>$null
+          Copy-Item $png podglad.png
+          git add podglad.png
+          git -c user.name="ci" -c user.email="ci@localhost" commit --quiet -m "Podgląd okienka (${{ github.sha }})"
+          git push --quiet --force origin ci-podglad
 
       - name: Instalator (Inno Setup)
         shell: pwsh
