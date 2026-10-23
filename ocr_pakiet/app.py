@@ -365,41 +365,43 @@ class App:
         inner = tk.Frame(card, bg=card_bg)
         inner.pack(side="left", fill="both", expand=True, padx=(10, 8), pady=8)
 
+        # 1) nazwa produktu w kolorze typu promocji
         head = tk.Frame(inner, bg=card_bg)
         head.pack(fill="x")
-        tk.Label(head, text=f" {promo.badge} ", bg=accent, fg="white", font=("Segoe UI", 12, "bold"),
-                 padx=6, pady=1).pack(side="left")
         if is_new:
             tk.Label(head, text=" NOWA ", bg=NEW_TAG, fg="white", font=("Segoe UI", 8, "bold")).pack(
-                side="right", anchor="n")
+                side="right", anchor="n", padx=(6, 0))
         title = p.name[7:] if p.name.lower().startswith("pakiet ") else p.name
-        name_lbl = tk.Label(inner, text=title, bg=card_bg, fg=FG, font=("Segoe UI", 10, "bold"),
-                            anchor="w", justify="left", wraplength=wrap)
-        name_lbl.pack(fill="x", pady=(6, 0))
+        name_lbl = tk.Label(head, text=title, bg=card_bg, fg=accent, font=("Segoe UI", 11, "bold"),
+                            anchor="w", justify="left", wraplength=wrap - (int(50 * self.k) if is_new else 0))
+        name_lbl.pack(side="left", fill="x")
+        wraps = [name_lbl]
 
+        # 2) jak wygląda pakiet – pełny opis z kolumny Uwagi
+        if p.note:
+            note_lbl = tk.Label(inner, text=p.note, bg=card_bg, fg=FG, font=("Segoe UI", 10, "bold"),
+                                anchor="w", justify="left", wraplength=wrap)
+            note_lbl.pack(fill="x", pady=(4, 0))
+            wraps.append(note_lbl)
+
+        # 3) Lp. · kod · firma (+ termin)
         meta = tk.Frame(inner, bg=card_bg)
-        meta.pack(fill="x", pady=(2, 0))
+        meta.pack(fill="x", pady=(6, 0))
         if lp is not None:
-            tk.Label(meta, text=f"Lp. {lp}  ·", bg=card_bg, fg=MUTED, font=("Segoe UI", 8)).pack(side="left")
+            tk.Label(meta, text=f"Lp. {lp}  ·", bg=card_bg, fg=MUTED, font=("Segoe UI", 9)).pack(side="left")
         codes = [it.code for it in p.items]
         for i, code in enumerate(codes[:3]):
-            c = tk.Label(meta, text=code, bg=card_bg, fg=ACCENT, font=("Segoe UI", 8, "underline"),
+            c = tk.Label(meta, text=code, bg=card_bg, fg=ACCENT, font=("Segoe UI", 9, "underline"),
                          cursor="hand2")
             c.pack(side="left", padx=(4, 0))
             c.bind("<Button-1>", lambda e, code=code: self.copy_code(code))
         if p.producer:
-            tk.Label(meta, text=f"·  {p.producer}", bg=card_bg, fg=MUTED, font=("Segoe UI", 8)).pack(
+            tk.Label(meta, text=f"·  {p.producer}", bg=card_bg, fg=MUTED, font=("Segoe UI", 9)).pack(
                 side="left", padx=(4, 0))
         if promo.deadline:
             tk.Label(meta, text=f"⏰ do {promo.deadline}", bg=card_bg, fg=WARN,
-                     font=("Segoe UI", 8, "bold")).pack(side="right")
+                     font=("Segoe UI", 9, "bold")).pack(side="right")
 
-        wraps = [name_lbl]
-        if promo.show_detail:
-            d = tk.Label(inner, text=p.note, bg=card_bg, fg="#3a3f46", font=("Segoe UI", 9), anchor="w",
-                         justify="left", wraplength=wrap)
-            d.pack(fill="x", pady=(4, 0))
-            wraps.append(d)
         if len(p.items) > 1:  # pakiet z kilku towarów – co jest, czego brakuje
             for it in p.items:
                 nm = it.name or names.get(it.code, "")
